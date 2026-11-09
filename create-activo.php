@@ -104,9 +104,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
                 $modelo = trim(isset($_POST['modelo']) ? (string) $_POST['modelo'] : '');
                 $serial = trim(isset($_POST['numero_serial']) ? (string) $_POST['numero_serial'] : '');
                 $descripcion = trim(isset($_POST['descripcion']) ? (string) $_POST['descripcion'] : '');
-                $codigoGenerado = 'SISAT-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+                $codigoGenerado = 'PENDIENTE-' . strtoupper(bin2hex(random_bytes(8)));
 
-                $activoInsert = $dbh->prepare("INSERT INTO activos (categoria_id, ubicacion_id, codigo_placa, codigo_inventario, descripcion, marca, modelo, numero_serial, estado, creado_por) VALUES (:categoria_id, :ubicacion_id, :placa, :codigo, :descripcion, :marca, :modelo, :serial, :estado, :creado_por)");
+                $reparada = (($_POST['reparada'] ?? 'NO') === 'SI') ? 'SI' : 'NO';
+                $descripcionReparacion = trim((string) ($_POST['descripcion_reparacion'] ?? ''));
+                if ($reparada === 'SI' && $descripcionReparacion === '') {
+                    throw new RuntimeException('Describe la causa de la reparación o el trabajo realizado.');
+                }
+                $activoInsert = $dbh->prepare("INSERT INTO activos (categoria_id, ubicacion_id, codigo_placa, codigo_inventario, descripcion, marca, modelo, numero_serial, estado, reparada, costo_reparacion, fecha_reparacion, fecha_mantenimiento, descripcion_reparacion, creado_por) VALUES (:categoria_id, :ubicacion_id, :placa, :codigo, :descripcion, :marca, :modelo, :serial, :estado, :reparada, :costo_reparacion, :fecha_reparacion, :fecha_mantenimiento, :descripcion_reparacion, :creado_por)");
                 $activoInsert->execute(array(
                     ':categoria_id' => $categoriaId,
                     ':ubicacion_id' => $ubicacionId,
@@ -117,9 +122,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
                     ':modelo' => ($modelo !== '' ? $modelo : null),
                     ':serial' => ($serial !== '' ? $serial : null),
                     ':estado' => $estado,
+                    ':reparada' => $reparada,
+                    ':costo_reparacion' => (($_POST['costo_reparacion'] ?? '') !== '' ? (float) $_POST['costo_reparacion'] : null),
+                    ':fecha_reparacion' => (($_POST['fecha_reparacion'] ?? '') !== '' ? $_POST['fecha_reparacion'] : null),
+                    ':fecha_mantenimiento' => (($_POST['fecha_mantenimiento'] ?? '') !== '' ? $_POST['fecha_mantenimiento'] : null),
+                    ':descripcion_reparacion' => ($descripcionReparacion !== '' ? $descripcionReparacion : null),
                     ':creado_por' => (int) $_SESSION['uid']
                 ));
                 $activoId = (int) $dbh->lastInsertId();
+                $codigoGenerado = 'SER-INV-' . str_pad((string) $activoId, 6, '0', STR_PAD_LEFT);
+                $actualizarCodigo = $dbh->prepare("UPDATE activos SET codigo_inventario = :codigo WHERE id = :id");
+                $actualizarCodigo->execute(array(':codigo' => $codigoGenerado, ':id' => $activoId));
 
                 if ($categoriaCodigo === 'COMPUTO') {
                     $stmt = $dbh->prepare("INSERT INTO equipos_computo (activo_id, tipo_equipo, capacidad_disco, tipo_disco, capacidad_ram, procesador, direccion_ip, mac, version_so, descripcion_equipo) VALUES (:activo_id, :tipo_equipo, :capacidad_disco, :tipo_disco, :ram, :procesador, :ip, :mac, :so, :descripcion)");
@@ -142,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
                         ':tipo' => $_POST['tipo_impresora'],
                         ':ip' => trim((string) $_POST['direccion_ip']),
                         ':mac' => trim((string) $_POST['mac']),
-                        ':fecha' => ($_POST['fecha_ultimo_cambio_suministro'] !== '' ? $_POST['fecha_ultimo_cambio_suministro'] : null),
+                        ':fecha' => (($_POST['fecha_ultimo_cambio_suministro'] ?? '') !== '' ? $_POST['fecha_ultimo_cambio_suministro'] : null),
                         ':suministro' => trim((string) $_POST['tipo_suministro']),
                         ':observaciones' => trim((string) $_POST['observaciones_suministro'])
                     ));
@@ -269,6 +282,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
                 <div class="col-md-6 form-group"><label for="detalle_ubicacion">Detalle adicional</label><input class="form-control" id="detalle_ubicacion" name="detalle_ubicacion" maxlength="255"></div>
               </div>
               <div class="form-group"><label for="descripcion">Descripción general / observaciones</label><textarea class="form-control" id="descripcion" name="descripcion" rows="2"></textarea></div>
+              <hr><h4>Reparación y mantenimiento</h4><div class="row">
+                <div class="col-md-6 form-group"><label>¿Reparada?</label><select class="form-control" name="reparada" id="reparada"><option value="NO" selected>No</option><option value="SI">Sí</option></select></div>
+                <div class="col-md-6 form-group"><label>Costo de reparación <small>(opcional)</small></label><input class="form-control" type="number" name="costo_reparacion" min="0" step="0.01" placeholder="Dejar vacío si la reparación la realizó TI sin costo"></div>
+                <div class="col-md-6 form-group"><label>Fecha de reparación</label><input class="form-control" type="date" name="fecha_reparacion"></div>
+                <div class="col-md-6 form-group"><label>Fecha de mantenimiento</label><input class="form-control" type="date" name="fecha_mantenimiento"></div>
+                <div class="col-md-12 form-group"><label>Descripción / causa de la reparación o trabajo realizado <span class="text-danger" id="reparacionObligatoria" style="display:none">*</span></label><textarea class="form-control" name="descripcion_reparacion" id="descripcion_reparacion" rows="3" placeholder="Indica la falla que originó la reparación o el trabajo realizado por TI o un proveedor"></textarea></div>
+              </div>
 
               <fieldset class="category-fields" data-category="COMPUTO" disabled style="display:none;">
                 <hr><h4>Formulario: equipos de cómputo</h4><div class="row">
@@ -291,7 +311,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
                   <div class="col-md-6 form-group"><label>MAC</label><input class="form-control" name="mac"></div>
                   <div class="col-md-6 form-group"><label>Último cambio de suministro</label><input class="form-control" type="date" name="fecha_ultimo_cambio_suministro"></div>
                   <div class="col-md-6 form-group"><label>Tipo de suministro</label><input class="form-control" name="tipo_suministro" placeholder="Tóner, tinta, cinta, etc."></div>
-                  <div class="col-md-12 form-group"><label>Observaciones de suministro / reparación</label><textarea class="form-control" name="observaciones_suministro" rows="2" placeholder="El historial de reparaciones se gestionará desde Mantenimientos."></textarea></div>
+                  <div class="col-md-12 form-group"><label>Observaciones de suministro</label><textarea class="form-control" name="observaciones_suministro" rows="2"></textarea></div>
                 </div>
               </fieldset>
 
@@ -306,7 +326,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
                 <hr><h4>Formulario: telefonía</h4><div class="row">
                   <div class="col-md-6 form-group"><label>Número telefónico / extensión</label><input class="form-control" name="numero_extension" maxlength="60"></div>
                   <div class="col-md-6 form-group"><label>Proveedor</label><input class="form-control" name="proveedor" maxlength="120"></div>
-                  <div class="col-md-6 form-group"><label>Tipo de equipo *</label><select class="form-control" name="tipo_telefonia" required><option value="">Seleccione</option><option value="SMARTPHONE">Smartphone</option><option value="TELEFONO_ESCRITORIO">Teléfono de escritorio</option><option value="ROUTER">Router</option><option value="SIM_CARD">SIM Card</option></select></div>
+                  <div class="col-md-6 form-group"><label>Tipo de equipo *</label><select class="form-control" name="tipo_telefonia" required><option value="">Seleccione</option><option value="SMARTPHONE">Smartphone</option><option value="TELEFONO_ESCRITORIO">Teléfono de escritorio</option><option value="SIM_CARD">SIM Card</option></select></div>
                   <div class="col-md-12 form-group"><label>Descripción</label><textarea class="form-control" name="descripcion_telefonia" rows="2"></textarea></div>
                 </div>
               </fieldset>
@@ -346,6 +366,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
   </div>
 </div>
 <?php include __DIR__ . '/includes/footer.php'; ?>
+<script>
+(function(){var s=document.getElementById('reparada'),d=document.getElementById('descripcion_reparacion'),r=document.getElementById('reparacionObligatoria');function validar(){var si=s&&s.value==='SI';if(d)d.required=!!si;if(r)r.style.display=si?'inline':'none';}if(s)s.addEventListener('change',validar);validar();})();
+</script>
 <script>
 (function () {
     var selector = document.getElementById('categoria');
