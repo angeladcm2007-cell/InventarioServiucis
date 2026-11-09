@@ -69,7 +69,11 @@ foreach($results as $result)
                                     <div class="form-group mt-20">
                                         <div class="">
                                       
+<<<<<<< HEAD
                                             <button type="submit" class="btn" style="color: #172541;">Enviar</button>
+=======
+                                            <button type="submit" class="btn" style="color: #172541;">Search</button>
+>>>>>>> main
                                             <div class="clearfix"></div>
                                         </div>
                                     </div>

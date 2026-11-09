@@ -11426,7 +11426,11 @@
 			 * Display information string for when the table is empty. Typically the
 			 * format of this string should match `info`.
 			 *  @type string
+<<<<<<< HEAD
 			 *  @default Mostrando de 0 a 0 Entradas
+=======
+			 *  @default Showing 0 to 0 of 0 entries
+>>>>>>> main
 			 *
 			 *  @dtopt Language
 			 *  @name DataTable.defaults.language.infoEmpty
@@ -11440,7 +11444,11 @@
 			 *      } );
 			 *    } );
 			 */
+<<<<<<< HEAD
 			"sInfoEmpty": "Mostrando de 0 a 0 Entradas",
+=======
+			"sInfoEmpty": "Showing 0 to 0 of 0 entries",
+>>>>>>> main
 	
 	
 			/**

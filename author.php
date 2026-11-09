@@ -72,7 +72,11 @@ CAMBIO DE CLAVE
           <br><br><br><h5><strong></h5>DESARROLLADO POR:</strong></h5><br>
       <h5><strong></h5>BACHILLER: 	ISOLINA YOLANDA MEDINA RUIZ ; 27380973 </strong></h5><br><br>
                                             
+<<<<<<< HEAD
     <A HREF="#" TARGET="BLANK"> <IMG SRC="assets/images/PDF_file_icon.svg.PNG" WIDTH="23">    DESCARGAR MANUAL DE USUARIO</A>
+=======
+    <A HREF="#" TARGET="BLANK"> <IMG SRC="assets/images/PDF_file_icon.svg.PNG" WIDTH="23">DESCARGAR MANUAL DE USUARIO</A>
+>>>>>>> main
                                             <div class="panel-body">
 
                                                 

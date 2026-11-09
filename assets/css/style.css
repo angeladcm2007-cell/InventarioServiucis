@@ -229,6 +229,10 @@ p {
 }
 .customers {
     background: #de0e0d;
+<<<<<<< HEAD
+=======
+    padding: ;
+>>>>>>> main
 }
 .footer{
     background: #182c44;
@@ -280,4 +284,8 @@ p {
 .w3l-copyright {
     padding: 1.5em 0;
     border-top: 1px solid rgba(167, 166, 166, 0.2);
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> main

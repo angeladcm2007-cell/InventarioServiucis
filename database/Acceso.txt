@@ -1,3 +1,10 @@
 Admin Username : administrador@gmail.com
 Password : admin
 -----------------------------------------------------------
+<<<<<<< HEAD
+=======
+
+Departamento de sistemas
+Sistemas
+Sistemas123/
+>>>>>>> main

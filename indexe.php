@@ -74,7 +74,11 @@ include('includes/config.php');
                 </li>
               </ul>
               <form class="d-flex" role="search">
+<<<<<<< HEAD
                 <button class="btn btn-danger" type="submit" href="https://mayurik.com">Enviar</button>
+=======
+                <button class="btn btn-danger" type="submit" href="https://mayurik.com">Search</button>
+>>>>>>> main
               </form>
             </div>
           </div>
