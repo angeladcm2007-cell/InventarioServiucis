@@ -1,51 +1,74 @@
 <?php
-session_start();
-error_reporting(0);
-include('includes/config.php');
-if(strlen($_SESSION['alogin'])=="")
-    {   
-    header("Location: index.php"); 
+require_once __DIR__ . '/includes/config.php';
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
+// La autenticación nueva establece ambos valores al iniciar sesión.
+if (empty($_SESSION['alogin']) || empty($_SESSION['uid'])) {
+    header('Location: index.php');
+    exit;
+}
+
+if (empty($_SESSION['csrf_change_password'])) {
+    $_SESSION['csrf_change_password'] = bin2hex(random_bytes(32));
+}
+
+$msg = '';
+$error = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
+    $token = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
+    $currentPassword = isset($_POST['password']) ? (string) $_POST['password'] : '';
+    $newPassword = isset($_POST['newpassword']) ? (string) $_POST['newpassword'] : '';
+    $confirmPassword = isset($_POST['confirmpassword']) ? (string) $_POST['confirmpassword'] : '';
+
+    if (!hash_equals($_SESSION['csrf_change_password'], $token)) {
+        $error = 'La sesión del formulario venció. Actualiza la página e inténtalo nuevamente.';
+    } elseif ($currentPassword === '' || $newPassword === '' || $confirmPassword === '') {
+        $error = 'Completa todos los campos.';
+    } elseif (strlen($newPassword) < 12) {
+        $error = 'La nueva contraseña debe tener al menos 12 caracteres.';
+    } elseif ($newPassword !== $confirmPassword) {
+        $error = 'La nueva contraseña y su confirmación no coinciden.';
+    } elseif ($currentPassword === $newPassword) {
+        $error = 'La nueva contraseña debe ser diferente de la actual.';
+    } else {
+        try {
+            $sql = "SELECT password_hash FROM usuarios_sistema
+                    WHERE id = :id AND usuario = :usuario AND estado = 'ACTIVO'
+                    LIMIT 1";
+            $stmt = $dbh->prepare($sql);
+            $stmt->bindValue(':id', (int) $_SESSION['uid'], PDO::PARAM_INT);
+            $stmt->bindValue(':usuario', (string) $_SESSION['alogin'], PDO::PARAM_STR);
+            $stmt->execute();
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$user || !password_verify($currentPassword, $user['password_hash'])) {
+                $error = 'La contraseña actual es incorrecta.';
+            } else {
+                $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
+                $update = $dbh->prepare("UPDATE usuarios_sistema
+                                         SET password_hash = :hash, fecha_actualizacion = NOW()
+                                         WHERE id = :id AND estado = 'ACTIVO'");
+                $update->bindValue(':hash', $newHash, PDO::PARAM_STR);
+                $update->bindValue(':id', (int) $_SESSION['uid'], PDO::PARAM_INT);
+                $update->execute();
+
+                if ($update->rowCount() === 1) {
+                    $msg = 'La contraseña se actualizó correctamente.';
+                    $_SESSION['csrf_change_password'] = bin2hex(random_bytes(32));
+                } else {
+                    $error = 'No se pudo confirmar la actualización de la contraseña. Inténtalo nuevamente.';
+                }
+            }
+        } catch (PDOException $e) {
+            error_log('Error al cambiar contraseña: ' . $e->getMessage());
+            $error = 'Ocurrió un error al actualizar la contraseña. Contacta al administrador del sistema.';
+        }
     }
-    else{
-if(isset($_POST['submit']))
-    {
-$password=md5($_POST['password']);
-$newpassword=md5($_POST['newpassword']);
-$username=$_SESSION['alogin'];
-    $sql ="SELECT Password FROM admin WHERE UserName=:username and Password=:password";
-$query= $dbh -> prepare($sql);
-$query-> bindParam(':username', $username, PDO::PARAM_STR);
-$query-> bindParam(':password', $password, PDO::PARAM_STR);
-$query-> execute();
-$results = $query -> fetchAll(PDO::FETCH_OBJ);
-if($query -> rowCount() > 0)
-{
-$con="update admin set Password=:newpassword where UserName=:username";
-$chngpwd1 = $dbh->prepare($con);
-$chngpwd1-> bindParam(':username', $username, PDO::PARAM_STR);
-$chngpwd1-> bindParam(':newpassword', $newpassword, PDO::PARAM_STR);
-$chngpwd1->execute();
-$msg="Your Password succesfully changed";
-}
-else {
-$error="Your current password is wrong";    
-}
 }
 ?>
-
-        <script type="text/javascript">
-function valid()
-{
-if(document.chngpwd.newpassword.value!= document.chngpwd.confirmpassword.value)
-{
-alert("New Password and Confirm Password Field do not match  !!");
-document.chngpwd.confirmpassword.focus();
-return false;
-}
-return true;
-}
-</script>
-
             <?php include('includes/topbar.php');?>   
             <div class="content-wrapper">
                 <div class="content-container">
@@ -102,7 +125,8 @@ else if($error){?>
   
                                             <div class="panel-body">
 
-                                                <form  name="chngpwd" method="post" \ onSubmit="return valid();">
+                                                <form name="chngpwd" method="post" onSubmit="return valid();">
+                                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_change_password'], ENT_QUOTES, 'UTF-8'); ?>">
                                                     <div class="form-group has-success">
                                                         <label for="success" class="control-label">Contraseña Actual</label>
                                                 		<div class="">
@@ -113,13 +137,13 @@ else if($error){?>
                                                        <div class="form-group has-success">
                                                         <label for="success" class="control-label">Nueva Contraseña</label>
                                                         <div class="">
-                                                            <input type="password" name="newpassword" required="required" class="form-control" id="success">
+                                                            <input type="password" name="newpassword" minlength="12" required="required" class="form-control" id="success">
                                                         </div>
                                                     </div>
                                                      <div class="form-group has-success">
                                                         <label for="success" class="control-label">Confirme Contraseña</label>
                                                         <div class="">
-                                                            <input type="password" name="confirmpassword" class="form-control" required="required" id="success">
+                                                            <input type="password" name="confirmpassword" minlength="12" class="form-control" required="required" id="success">
                                                         </div>
                                                     </div>
   <div class="form-group has-success">
@@ -162,4 +186,3 @@ else if($error){?>
  Visit website : www.mayurik.com -->  
 
        
-<?php  } ?>

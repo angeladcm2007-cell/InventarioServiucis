@@ -1,230 +1,163 @@
 <?php
 session_start();
-error_reporting(0);
-include('includes/config.php');
-if(strlen($_SESSION['alogin'])=="")
-{   header("Location: index.php"); }else{
+require_once __DIR__ . '/includes/config.php';
+
+if (!isset($_SESSION['alogin']) || $_SESSION['alogin'] === '') {
+    header('Location: index.php');
+    exit;
+}
+
+function h($value) {
+    return htmlentities((string)$value, ENT_QUOTES, 'UTF-8');
+}
+
+function obtenerTotal($dbh, $sql) {
+    $stmt = $dbh->query($sql);
+    return (int)$stmt->fetchColumn();
+}
+
+try {
+    $totalActivos = obtenerTotal($dbh, "SELECT COUNT(*) FROM activos");
+    $asignacionesActivas = obtenerTotal($dbh, "SELECT COUNT(*) FROM asignaciones WHERE estado_asignacion = 'ACTIVA'");
+    $totalPersonas = obtenerTotal($dbh, "SELECT COUNT(*) FROM personas WHERE estado = 'ACTIVA'");
+    $mantenimientosPendientes = obtenerTotal($dbh, "SELECT COUNT(*) FROM mantenimientos WHERE resultado = 'PENDIENTE'");
+
+    $sqlRecientes = "SELECT a.id, a.numero_control, a.fecha_asignacion,
+                            ac.codigo_inventario, ac.descripcion AS activo_descripcion,
+                            p.nombres AS persona_nombre,
+                            u.nombre AS ubicacion_nombre, s.nombre AS sede_nombre
+                     FROM asignaciones a
+                     INNER JOIN activos ac ON ac.id = a.activo_id
+                     INNER JOIN personas p ON p.id = a.persona_id
+                     LEFT JOIN ubicaciones u ON u.id = ac.ubicacion_id
+                     LEFT JOIN sedes s ON s.id = u.sede_id
+                     ORDER BY a.fecha_creacion DESC, a.id DESC
+                     LIMIT 10";
+    $stmtRecientes = $dbh->query($sqlRecientes);
+    $asignacionesRecientes = $stmtRecientes->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log('Error en dashboard: ' . $e->getMessage());
+    http_response_code(500);
+    exit('No fue posible cargar el panel. Verifique la estructura de la base de datos y la conexión.');
+}
 ?>
+<?php include __DIR__ . '/includes/topbar.php'; ?>
+<style>
+/* Separación clara entre el resumen y el panel de asignaciones */
+.main-page .dashboard-summary-row {
+    margin-bottom: 50px !important;
+}
+.main-page .dashboard-recent-row {
+    margin-top: 0 !important;
+    clear: both;
+}
+.main-page .dashboard-recent-row > [class*="col-"] {
+    margin-top: 0;
+}
+.main-page .dashboard-recent-row .panel {
+    margin-top: 0;
+}
+@media (max-width: 767px) {
+    .main-page .dashboard-summary-row {
+        margin-bottom: 30px !important;
+    }
+}
+</style>
 
-
-              <?php include('includes/topbar.php');?>
-            <div class="content-wrapper">
-                <div class="content-container">
-
-                    <?php include('includes/leftbar.php');?>  
-
-                    <div class="main-page">
-                        <div class="container-fluid">
-                            <div class="row page-title-div">
-                                <div class="col-sm-6">
-                                    <h2 class="title">Inicio</h2>
-                                  
-                                </div>
-                                <!-- /.col-sm-6 -->
-                            </div>
-                            <!-- /.row -->
-                      
-                        </div>
-                        <!-- /.container-fluid -->
-
-                        <section class="section">
-                            <div class="container-fluid">
-                                <div class="row">
-                                    <div class="col-lg-3 col-md-3 col-sm-6 col-xs-12 text-center">
-                                        <a class="dashboard-stat bg-white" href="manage-asignacion.php">
-<?php 
-$sql1 ="SELECT number from tblasig ";
-$query1 = $dbh -> prepare($sql1);
-$query1->execute();
-$results1=$query1->fetchAll(PDO::FETCH_OBJ);
-$totalstudents=$query1->rowCount();
-?>
-<span class="bg-icon"><i class="fa fa-share"></i></span>
-                                            <span class="number counter"><?php echo htmlentities($totalstudents);?></span>
-                                            <span class="name">Activos Asignados</span>
-                                            
-                                        </a>
-                                        <!-- /.dashboard-stat -->
-                                    </div>
-                 
-
-                                    <div class="col-lg-3 col-md-3 col-sm-6 col-xs-12">
-                                        <a class="dashboard-stat bg-white" href="manage-activos.php">
-                                        
-										
-										
-										
-										
-										<?php 
-$sql2 ="SELECT id from  tblactivos where tipo_activo='telecomunicaciones' ";
-$query2 = $dbh -> prepare($sql2);
-$query2->execute();
-$results2=$query2->fetchAll(PDO::FETCH_OBJ);
-$totalclasses=$query2->rowCount();
-?><span class="bg-icon"><i class="fa fa-server"></i></span>
-                                            <span class="number counter"><?php echo htmlentities($totalclasses);?></span>
-                                            <span class="name">Activos Telecomunicaciones </span>
-                                            
-                                        </a>
-                                        <!-- /.dashboard-stat -->
-                                    </div>
-									         <div class="col-lg-3 col-md-3 col-sm-6 col-xs-12">
-                                        <a class="dashboard-stat bg-white" href="manage-activos.php">
-                                        
-										
-										
-										
-										
-										<?php 
-$sql2 ="SELECT id from  tblactivos where tipo_activo='automatizacion' ";
-$query2 = $dbh -> prepare($sql2);
-$query2->execute();
-$results2=$query2->fetchAll(PDO::FETCH_OBJ);
-$totalclasses=$query2->rowCount();
-?><span class="bg-icon"><i class="fa fa-server"></i></span>
-                                            <span class="number counter"><?php echo htmlentities($totalclasses);?></span>
-                                            <span class="name">Activos Automatización </span>
-                                            
-                                        </a>
-                                        <!-- /.dashboard-stat -->
-                                    </div>
-									   <div class="col-lg-3 col-md-3 col-sm-6 col-xs-12">
-                                        <a class="dashboard-stat bg-white" href="manage-usuarios.php">
-                                        
-										
-										
-										
-										
-										<?php 
-$sql2 ="SELECT id from  tblactivos ";
-$query2 = $dbh -> prepare($sql2);
-$query2->execute();
-$results2=$query2->fetchAll(PDO::FETCH_OBJ);
-$totalclasses=$query2->rowCount();
-?><span class="bg-icon"><i class="fa fa-users"></i></span>
-                                            <span class="number counter"><?php echo htmlentities($totalclasses);?></span>
-                                            <span class="name">Usuarios Registrados </span>
-                                            
-                                        </a>
-                                        <!-- /.dashboard-stat -->
-                                    </div>
-									
-                                    
-                                </div>
-<section class="section">
-                            <div class="container-fluid">
-
-                             
-
-                                <div class="row">
-                                    <div class="col-md-12">
-
-                                        <div class="panel">
-                                            <div class="panel-heading">
-                                                <div class="panel-title">
-                                                    <h5>Asignaciones Recientes</h5>
-                                                </div>
-                                            </div>
-<?php if($msg){?>
-<div class="alert alert-success left-icon-alert" role="alert">
- <strong>EXITOSO</strong><?php echo htmlentities($msg); ?>
- </div><?php } 
-else if($error){?>
-    <div class="alert alert-danger left-icon-alert" role="alert">
-                                            <strong>ERROR!</strong> <?php echo htmlentities($error); ?>
-                                        </div>
-                                        <?php } ?>
-                                            <div class="panel-body p-20">
-
-                                                <table id="example" class="display table table-striped table-bordered" cellspacing="0" width="100%">
-                                                    <thead>
-                                                       <tr>
-                                                            <th>N °</th>
-                                                            <th>N° Control </th>
-                                                            <th>Equipo Asignado</th>
-                                                            <th>Usuario Asignado</th>
-                                                            <th>Fecha Registro</th>
-                                                 
-                                                       
-															            
-                                                        </tr>
-                                                    </thead>
-                                                    <tfoot>
-                                                          <tr>
-                                                            <th>N °</th>
-                                                            <th>N° Control </th>
-                                                            <th>Equipo Asignado</th>
-                                                            <th>Usuario Asignado</th>
-                                                            <th>Fecha Registro</th>
-                                                     
-                                              
-															            
-                                                        </tr>
-                                                    </tfoot>
-                                                    <tbody>
-<?php $sql = "SELECT * 
-from tblasig  join tblactivos 
-on tblactivos.id=tblasig.ClassId inner join tblusuarios on tblusuarios.id=tblasig.usuarioID";
-$query = $dbh->prepare($sql);
-$query->execute();
-$results=$query->fetchAll(PDO::FETCH_OBJ);
-$cnt=1;
-if($query->rowCount() > 0)
-{
-foreach($results as $result)
-{   ?>
-<tr>
- <td><?php echo htmlentities($cnt);?></td>
-                                                             <td><?php echo htmlentities($result->number);?></td>
-														
-                                                            <td><?php echo htmlentities($result->descrip);?>&nbsp;  Etiqueta:<?php echo htmlentities($result->etiqueta);?></td>
-                                                            <td><?php echo htmlentities($result->nombres);?>&nbsp;  Negocio:<?php echo htmlentities($result->negocio);?></td>
-                                                            <td><?php echo htmlentities($result->fecha);?></td>
-                                              
-</tr>
-<?php $cnt=$cnt+1;}} ?>
-                                                       
-                                                    
-                                                    </tbody>
-                                                </table>
-
-                                         
-                                                <!-- /.col-md-12 -->
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <!-- /.col-md-6 -->
-
-                                                               
-                                                </div>
-                                                <!-- /.col-md-12 -->
-                                            </div>
-                                        </div>
-                                        <!-- /.panel -->
-                                    </div>
-                                    <!-- /.col-md-6 -->
-
-                                </div>
-                                <!-- /.row -->
-
-                            </div>
-                            <!-- /.container-fluid -->
-                        </section>
-                                <!-- /.row -->
-                            </div>
-                            <!-- /.container-fluid -->
-                        </section>
-                        <!-- /.section -->
-
+<div class="content-wrapper">
+    <div class="content-container">
+        <?php include __DIR__ . '/includes/leftbar.php'; ?>
+        <div class="main-page">
+            <div class="container-fluid">
+                <div class="row page-title-div">
+                    <div class="col-sm-12">
+                        <h2 class="title">Panel principal - Inventario tecnológico SERVIUCIS</h2>
+                        <p>Resumen general de activos, asignaciones, responsables y mantenimientos.</p>
                     </div>
-                    <!-- /.main-page -->
-
-                    
                 </div>
-                <!-- /.content-container -->
             </div>
-            <!-- /.content-wrapper -->
 
-    <?php include('includes/footer.php');?>
+            <section class="section">
+                <div class="container-fluid">
+                    <div class="row dashboard-summary-row">
+                        <div class="col-lg-3 col-md-3 col-sm-6 col-xs-12">
+                            <div class="dashboard-stat bg-white">
+                                <span class="bg-icon"><i class="fa fa-laptop"></i></span>
+                                <span class="number counter"><?php echo h($totalActivos); ?></span>
+                                <span class="name">Activos registrados</span>
+                            </div>
+                        </div>
+                        <div class="col-lg-3 col-md-3 col-sm-6 col-xs-12">
+                            <div class="dashboard-stat bg-white">
+                                <span class="bg-icon"><i class="fa fa-share"></i></span>
+                                <span class="number counter"><?php echo h($asignacionesActivas); ?></span>
+                                <span class="name">Asignaciones activas</span>
+                            </div>
+                        </div>
+                        <div class="col-lg-3 col-md-3 col-sm-6 col-xs-12">
+                            <div class="dashboard-stat bg-white">
+                                <span class="bg-icon"><i class="fa fa-users"></i></span>
+                                <span class="number counter"><?php echo h($totalPersonas); ?></span>
+                                <span class="name">Personas activas</span>
+                            </div>
+                        </div>
+                        <div class="col-lg-3 col-md-3 col-sm-6 col-xs-12">
+                            <div class="dashboard-stat bg-white">
+                                <span class="bg-icon"><i class="fa fa-wrench"></i></span>
+                                <span class="number counter"><?php echo h($mantenimientosPendientes); ?></span>
+                                <span class="name">Mantenimientos pendientes</span>
+                            </div>
+                        </div>
+                    </div>
 
-<?php } ?>
+                    <div class="row dashboard-recent-row">
+                        <div class="col-md-12">
+                            <div class="panel">
+                                <div class="panel-heading">
+                                    <div class="panel-title"><h5>Asignaciones recientes</h5></div>
+                                </div>
+                                <div class="panel-body p-20">
+                                    <div class="table-responsive">
+                                        <table id="example" class="display table table-striped table-bordered" cellspacing="0" width="100%">
+                                            <thead>
+                                                <tr>
+                                                    <th>N.º</th>
+                                                    <th>N.º de control</th>
+                                                    <th>Código de inventario</th>
+                                                    <th>Activo</th>
+                                                    <th>Persona asignada</th>
+                                                    <th>Sede</th>
+                                                    <th>Ubicación</th>
+                                                    <th>Fecha de asignación</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                            <?php if (count($asignacionesRecientes) > 0) { $contador = 1; ?>
+                                                <?php foreach ($asignacionesRecientes as $fila) { ?>
+                                                <tr>
+                                                    <td><?php echo $contador++; ?></td>
+                                                    <td><?php echo h($fila['numero_control']); ?></td>
+                                                    <td><?php echo h($fila['codigo_inventario']); ?></td>
+                                                    <td><?php echo h($fila['activo_descripcion']); ?></td>
+                                                    <td><?php echo h($fila['persona_nombre']); ?></td>
+                                                    <td><?php echo h($fila['sede_nombre']); ?></td>
+                                                    <td><?php echo h($fila['ubicacion_nombre']); ?></td>
+                                                    <td><?php echo h($fila['fecha_asignacion']); ?></td>
+                                                </tr>
+                                                <?php } ?>
+                                            <?php } else { ?>
+                                                <tr><td colspan="8" class="text-center">Todavía no hay asignaciones registradas.</td></tr>
+                                            <?php } ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+<?php include __DIR__ . '/includes/footer.php'; ?>

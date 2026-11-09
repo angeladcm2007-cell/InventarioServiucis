@@ -1,196 +1,385 @@
 <?php
 session_start();
-error_reporting(0);
-include('includes/config.php');
-if(strlen($_SESSION['alogin'])=="")
-    {   
-    header("Location: index.php"); 
-    }
-    else{
-if(isset($_POST['submit']))
-{
-$tipo_activo=$_POST['tipo_activo'];
-$descrip=$_POST['descrip'];
-$estado=$_POST['estado'];
-$etiqueta=$_POST['etiqueta'];
-$serial=$_POST['serial'];
-$modelo=$_POST['modelo'];
-$marca=$_POST['marca'];
-$ip_mac=$_POST['ip_mac'];
-$ubicacion=$_POST['ubicacion'];
-$sql="INSERT INTO  tblactivos(tipo_activo,descrip,estado,etiqueta,serial,modelo,marca,ip_mac,ubicacion) VALUES(:tipo_activo,:descrip,:estado,:etiqueta,:serial,:modelo,:marca,:ip_mac,:ubicacion)";
-$query = $dbh->prepare($sql);
-$query->bindParam(':tipo_activo',$tipo_activo,PDO::PARAM_STR);
-$query->bindParam(':descrip',$descrip,PDO::PARAM_STR);
-$query->bindParam(':estado',$estado,PDO::PARAM_STR);
-$query->bindParam(':etiqueta',$etiqueta,PDO::PARAM_STR);
-$query->bindParam(':serial',$serial,PDO::PARAM_STR);
-$query->bindParam(':modelo',$modelo,PDO::PARAM_STR);
-$query->bindParam(':marca',$marca,PDO::PARAM_STR);
-$query->bindParam(':ip_mac',$ip_mac,PDO::PARAM_STR);
-$query->bindParam(':ubicacion',$ubicacion,PDO::PARAM_STR);
-$query->execute();
-$lastInsertId = $dbh->lastInsertId();
-if($lastInsertId)
-{
-$msg="Registro Exitoso";
-}
-else 
-{
-$error="Ocurrio un Error Intente Nuevamente";
+require_once __DIR__ . '/includes/config.php';
+
+if (empty($_SESSION['alogin']) || empty($_SESSION['uid'])) {
+    header('Location: index.php');
+    exit;
 }
 
+$categorias = array(
+    'COMPUTO' => 'Equipos de cómputo',
+    'IMPRESION' => 'Dispositivos de impresión',
+    'PERIFERICO' => 'Periféricos',
+    'TELEFONIA' => 'Telefonía',
+    'SERVIDOR' => 'Servidores',
+    'INFRAESTRUCTURA' => 'Infraestructura tecnológica'
+);
+$estados = array(
+    'OPERATIVO_EN_USO' => 'Operativo / En uso',
+    'EN_STOCK' => 'En stock',
+    'EN_REPARACION' => 'En reparación',
+    'REGULAR' => 'Regular',
+    'DADO_DE_BAJA_OBSOLETO' => 'Dado de baja / Obsoleto'
+);
+
+$msg = '';
+$error = '';
+$codigoGenerado = '';
+$sedes = array();
+try {
+    $sedesStmt = $dbh->query("SELECT id, nombre FROM sedes WHERE estado = 'ACTIVA' ORDER BY nombre");
+    $sedes = $sedesStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log('No se pudieron cargar las sedes: ' . $e->getMessage());
+    $error = 'No fue posible consultar las sedes. Verifica la estructura de la base de datos.';
+}
+
+if (empty($_SESSION['csrf_activo'])) {
+    $_SESSION['csrf_activo'] = bin2hex(random_bytes(32));
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
+    $csrf = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
+    $categoriaCodigo = isset($_POST['categoria']) ? strtoupper(trim((string) $_POST['categoria'])) : '';
+
+    if (!hash_equals($_SESSION['csrf_activo'], $csrf)) {
+        $error = 'La sesión del formulario venció. Actualiza la página e inténtalo nuevamente.';
+    } elseif (!isset($categorias[$categoriaCodigo])) {
+        $error = 'Selecciona un tipo de activo válido.';
+    } else {
+        $sedeId = isset($_POST['sede_id']) ? (int) $_POST['sede_id'] : 0;
+        $nombreUbicacion = trim(isset($_POST['ubicacion_nombre']) ? (string) $_POST['ubicacion_nombre'] : '');
+        $tipoUbicacion = trim(isset($_POST['tipo_ubicacion']) ? (string) $_POST['tipo_ubicacion'] : '');
+        $piso = trim(isset($_POST['piso']) ? (string) $_POST['piso'] : '');
+        $area = trim(isset($_POST['area_departamento']) ? (string) $_POST['area_departamento'] : '');
+        $detalleUbicacion = trim(isset($_POST['detalle_ubicacion']) ? (string) $_POST['detalle_ubicacion'] : '');
+        $estado = isset($_POST['estado']) ? (string) $_POST['estado'] : 'EN_STOCK';
+
+        if ($sedeId < 1 || $nombreUbicacion === '') {
+            $error = 'Selecciona la sede e indica la ubicación del activo.';
+        } elseif (!isset($estados[$estado])) {
+            $error = 'Selecciona un estado válido.';
+        } else {
+            try {
+                $dbh->beginTransaction();
+
+                $sedeCheck = $dbh->prepare("SELECT id FROM sedes WHERE id = :id AND estado = 'ACTIVA' LIMIT 1");
+                $sedeCheck->execute(array(':id' => $sedeId));
+                if (!$sedeCheck->fetchColumn()) {
+                    throw new RuntimeException('La sede seleccionada no está disponible.');
+                }
+
+                // Reutiliza una ubicación coincidente; si no existe, la crea para mantener normalizada la relación sede-ubicación.
+                $ubicacionCheck = $dbh->prepare("SELECT id FROM ubicaciones WHERE sede_id = :sede_id AND nombre = :nombre AND COALESCE(piso, '') = :piso AND COALESCE(area_departamento, '') = :area AND estado = 'ACTIVA' LIMIT 1");
+                $ubicacionCheck->execute(array(
+                    ':sede_id' => $sedeId,
+                    ':nombre' => $nombreUbicacion,
+                    ':piso' => $piso,
+                    ':area' => $area
+                ));
+                $ubicacionId = (int) $ubicacionCheck->fetchColumn();
+                if ($ubicacionId < 1) {
+                    $ubicacionInsert = $dbh->prepare("INSERT INTO ubicaciones (sede_id, tipo_ubicacion, nombre, piso, area_departamento, detalle) VALUES (:sede_id, :tipo, :nombre, :piso, :area, :detalle)");
+                    $ubicacionInsert->execute(array(
+                        ':sede_id' => $sedeId,
+                        ':tipo' => ($tipoUbicacion !== '' ? $tipoUbicacion : null),
+                        ':nombre' => $nombreUbicacion,
+                        ':piso' => ($piso !== '' ? $piso : null),
+                        ':area' => ($area !== '' ? $area : null),
+                        ':detalle' => ($detalleUbicacion !== '' ? $detalleUbicacion : null)
+                    ));
+                    $ubicacionId = (int) $dbh->lastInsertId();
+                }
+
+                $catStmt = $dbh->prepare("SELECT id FROM categorias_activos WHERE codigo = :codigo AND estado = 'ACTIVA' LIMIT 1");
+                $catStmt->execute(array(':codigo' => $categoriaCodigo));
+                $categoriaId = (int) $catStmt->fetchColumn();
+                if ($categoriaId < 1) {
+                    throw new RuntimeException('La categoría seleccionada no existe en el catálogo de activos.');
+                }
+
+                $placa = trim(isset($_POST['codigo_placa']) ? (string) $_POST['codigo_placa'] : '');
+                $marca = trim(isset($_POST['marca']) ? (string) $_POST['marca'] : '');
+                $modelo = trim(isset($_POST['modelo']) ? (string) $_POST['modelo'] : '');
+                $serial = trim(isset($_POST['numero_serial']) ? (string) $_POST['numero_serial'] : '');
+                $descripcion = trim(isset($_POST['descripcion']) ? (string) $_POST['descripcion'] : '');
+                $codigoGenerado = 'SISAT-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+
+                $activoInsert = $dbh->prepare("INSERT INTO activos (categoria_id, ubicacion_id, codigo_placa, codigo_inventario, descripcion, marca, modelo, numero_serial, estado, creado_por) VALUES (:categoria_id, :ubicacion_id, :placa, :codigo, :descripcion, :marca, :modelo, :serial, :estado, :creado_por)");
+                $activoInsert->execute(array(
+                    ':categoria_id' => $categoriaId,
+                    ':ubicacion_id' => $ubicacionId,
+                    ':placa' => ($placa !== '' ? $placa : null),
+                    ':codigo' => $codigoGenerado,
+                    ':descripcion' => ($descripcion !== '' ? $descripcion : null),
+                    ':marca' => ($marca !== '' ? $marca : null),
+                    ':modelo' => ($modelo !== '' ? $modelo : null),
+                    ':serial' => ($serial !== '' ? $serial : null),
+                    ':estado' => $estado,
+                    ':creado_por' => (int) $_SESSION['uid']
+                ));
+                $activoId = (int) $dbh->lastInsertId();
+
+                if ($categoriaCodigo === 'COMPUTO') {
+                    $stmt = $dbh->prepare("INSERT INTO equipos_computo (activo_id, tipo_equipo, capacidad_disco, tipo_disco, capacidad_ram, procesador, direccion_ip, mac, version_so, descripcion_equipo) VALUES (:activo_id, :tipo_equipo, :capacidad_disco, :tipo_disco, :ram, :procesador, :ip, :mac, :so, :descripcion)");
+                    $stmt->execute(array(
+                        ':activo_id' => $activoId,
+                        ':tipo_equipo' => $_POST['tipo_equipo'],
+                        ':capacidad_disco' => trim((string) $_POST['capacidad_disco']),
+                        ':tipo_disco' => trim((string) $_POST['tipo_disco']),
+                        ':ram' => trim((string) $_POST['capacidad_ram']),
+                        ':procesador' => trim((string) $_POST['procesador']),
+                        ':ip' => trim((string) $_POST['direccion_ip']),
+                        ':mac' => trim((string) $_POST['mac']),
+                        ':so' => trim((string) $_POST['version_so']),
+                        ':descripcion' => trim((string) $_POST['descripcion_equipo'])
+                    ));
+                } elseif ($categoriaCodigo === 'IMPRESION') {
+                    $stmt = $dbh->prepare("INSERT INTO dispositivos_impresion (activo_id, tipo_impresora, direccion_ip, mac, fecha_ultimo_cambio_suministro, tipo_suministro, observaciones_suministro) VALUES (:activo_id, :tipo, :ip, :mac, :fecha, :suministro, :observaciones)");
+                    $stmt->execute(array(
+                        ':activo_id' => $activoId,
+                        ':tipo' => $_POST['tipo_impresora'],
+                        ':ip' => trim((string) $_POST['direccion_ip']),
+                        ':mac' => trim((string) $_POST['mac']),
+                        ':fecha' => ($_POST['fecha_ultimo_cambio_suministro'] !== '' ? $_POST['fecha_ultimo_cambio_suministro'] : null),
+                        ':suministro' => trim((string) $_POST['tipo_suministro']),
+                        ':observaciones' => trim((string) $_POST['observaciones_suministro'])
+                    ));
+                } elseif ($categoriaCodigo === 'PERIFERICO') {
+                    $stmt = $dbh->prepare("INSERT INTO perifericos (activo_id, tipo_periferico, descripcion_periferico) VALUES (:activo_id, :tipo, :descripcion)");
+                    $stmt->execute(array(':activo_id' => $activoId, ':tipo' => $_POST['tipo_periferico'], ':descripcion' => trim((string) $_POST['descripcion_periferico'])));
+                } elseif ($categoriaCodigo === 'TELEFONIA') {
+                    $stmt = $dbh->prepare("INSERT INTO telefonia (activo_id, numero_extension, proveedor, tipo_equipo, descripcion_telefonia) VALUES (:activo_id, :numero, :proveedor, :tipo, :descripcion)");
+                    $stmt->execute(array(
+                        ':activo_id' => $activoId,
+                        ':numero' => trim((string) $_POST['numero_extension']),
+                        ':proveedor' => trim((string) $_POST['proveedor']),
+                        ':tipo' => $_POST['tipo_telefonia'],
+                        ':descripcion' => trim((string) $_POST['descripcion_telefonia'])
+                    ));
+                } elseif ($categoriaCodigo === 'SERVIDOR') {
+                    $stmt = $dbh->prepare("INSERT INTO servidores (activo_id, hostname, estado_equipo, piso, rack_gabinete, direccion_ip, procesador, memoria_ram, sistema_operativo, version_so, aplicaciones_roles, descripcion_servidor) VALUES (:activo_id, :hostname, :estado_equipo, :piso, :rack, :ip, :procesador, :ram, :so, :version, :roles, :descripcion)");
+                    $stmt->execute(array(
+                        ':activo_id' => $activoId,
+                        ':hostname' => trim((string) $_POST['hostname']),
+                        ':estado_equipo' => $estados[$estado],
+                        ':piso' => ($piso !== '' ? $piso : null),
+                        ':rack' => trim((string) $_POST['rack_gabinete']),
+                        ':ip' => trim((string) $_POST['direccion_ip']),
+                        ':procesador' => trim((string) $_POST['procesador']),
+                        ':ram' => trim((string) $_POST['memoria_ram']),
+                        ':so' => trim((string) $_POST['sistema_operativo']),
+                        ':version' => trim((string) $_POST['version_so']),
+                        ':roles' => trim((string) $_POST['aplicaciones_roles']),
+                        ':descripcion' => trim((string) $_POST['descripcion_servidor'])
+                    ));
+                    $servidorId = (int) $dbh->lastInsertId();
+                    $tiposDisco = isset($_POST['disco_tipo']) && is_array($_POST['disco_tipo']) ? $_POST['disco_tipo'] : array();
+                    $capacidades = isset($_POST['disco_capacidad']) && is_array($_POST['disco_capacidad']) ? $_POST['disco_capacidad'] : array();
+                    $modelos = isset($_POST['disco_modelo']) && is_array($_POST['disco_modelo']) ? $_POST['disco_modelo'] : array();
+                    $seriales = isset($_POST['disco_serial']) && is_array($_POST['disco_serial']) ? $_POST['disco_serial'] : array();
+                    $raids = isset($_POST['disco_raid']) && is_array($_POST['disco_raid']) ? $_POST['disco_raid'] : array();
+                    $discoStmt = $dbh->prepare("INSERT INTO servidor_discos (servidor_id, numero_disco, tipo_disco, capacidad, modelo, numero_serial, configuracion_raid) VALUES (:servidor_id, :numero, :tipo, :capacidad, :modelo, :serial, :raid)");
+                    $numeroDisco = 0;
+                    foreach ($capacidades as $i => $capacidad) {
+                        $capacidad = trim((string) $capacidad);
+                        if ($capacidad === '') { continue; }
+                        $numeroDisco++;
+                        $discoStmt->execute(array(
+                            ':servidor_id' => $servidorId,
+                            ':numero' => $numeroDisco,
+                            ':tipo' => isset($tiposDisco[$i]) && $tiposDisco[$i] !== '' ? $tiposDisco[$i] : null,
+                            ':capacidad' => $capacidad,
+                            ':modelo' => isset($modelos[$i]) && $modelos[$i] !== '' ? $modelos[$i] : null,
+                            ':serial' => isset($seriales[$i]) && $seriales[$i] !== '' ? $seriales[$i] : null,
+                            ':raid' => isset($raids[$i]) && $raids[$i] !== '' ? $raids[$i] : null
+                        ));
+                    }
+                    if ($numeroDisco === 0) {
+                        throw new RuntimeException('Registra al menos un disco y su capacidad para el servidor.');
+                    }
+                } elseif ($categoriaCodigo === 'INFRAESTRUCTURA') {
+                    $stmt = $dbh->prepare("INSERT INTO infraestructura (activo_id, tipo_dispositivo, cantidad_puertos, direccion_ip, mac, piso, descripcion_infraestructura) VALUES (:activo_id, :tipo, :puertos, :ip, :mac, :piso, :descripcion)");
+                    $puertos = trim((string) $_POST['cantidad_puertos']);
+                    $stmt->execute(array(
+                        ':activo_id' => $activoId,
+                        ':tipo' => $_POST['tipo_dispositivo'],
+                        ':puertos' => ($puertos !== '' ? (int) $puertos : null),
+                        ':ip' => trim((string) $_POST['direccion_ip']),
+                        ':mac' => trim((string) $_POST['mac']),
+                        ':piso' => ($piso !== '' ? $piso : null),
+                        ':descripcion' => trim((string) $_POST['descripcion_infraestructura'])
+                    ));
+                }
+
+                $dbh->commit();
+                $msg = 'Activo registrado correctamente. Código de inventario: ' . $codigoGenerado;
+                $_SESSION['csrf_activo'] = bin2hex(random_bytes(32));
+            } catch (Throwable $e) {
+                if ($dbh->inTransaction()) { $dbh->rollBack(); }
+                error_log('Error al registrar activo: ' . $e->getMessage());
+                $error = ($e instanceof RuntimeException) ? $e->getMessage() : 'No fue posible registrar el activo. Verifica los datos e inténtalo nuevamente.';
+            }
+        }
+    }
 }
 ?>
-
-
-            <!-- ========== TOP NAVBAR ========== -->
-  <?php include('includes/topbar.php');?> 
-            <!-- ========== WRAPPER FOR BOTH SIDEBARS & MAIN CONTENT ========== -->
-            <div class="content-wrapper">
-                <div class="content-container">
-
-                    <!-- ========== LEFT SIDEBAR ========== -->
-                   <?php include('includes/leftbar.php');?>  
-                    <!-- /.left-sidebar -->
-
-                    <div class="main-page">
-
-                     <div class="container-fluid">
-                            <div class="row page-title-div">
-                                <div class="col-md-6">
-                                    <h2 class="title">Registrar Activos de Telecomunicaciones</h2>
-                                
-                                </div>
-                                
-                                <!-- /.col-md-6 text-right -->
-                            </div>
-                            <!-- /.row -->
-                            <div class="row breadcrumb-div">
-                                <div class="col-md-6">
-                                    <ul class="breadcrumb">
-                                        <li><a href="dashboard.php"><i class="fa fa-home"></i> Inicio</a></li>
-                                        <li> Activos</li>
-                                        <li class="active">Registrar Activos </li>
-                                    </ul>
-                                </div>
-                             
-                            </div>
-                            <!-- /.row -->
-                        </div>
-                         <section class="section">
-                        <div class="container-fluid">
-                           
-                        <div class="row">
-                                    <div class="col-md-8 col-md-offset-2">
-                                        <div class="panel">
-                                            <div class="panel-heading">
-                                                <div class="panel-title">
-                                                    <h5>Registrar Activos de Telecomunicaciones</h5>
-                                                </div>
-                                            </div>
-                                            <div class="panel-body">
-<?php if($msg){?>
-<div class="alert alert-success left-icon-alert" role="alert">
- <strong>EXITOSO!</strong><?php echo htmlentities($msg); ?>
- </div><?php } 
-else if($error){?>
-    <div class="alert alert-danger left-icon-alert" role="alert">
-                                            <strong>ERROR!</strong> <?php echo htmlentities($error); ?>
-                                        </div>
-                                        <?php } ?>
-                                                <form class="" method="post">
-												
-													<div class="form-group">
-                                                     <label for="date" class=" control-label"></label>
-														<select name="tipo_activo" class="form-control" id="default" required="required">
-<option value="">Seleccione Tipo de Activo</option>
-<option value="Telecomunicaciones">Telecomunicaciones </option>
-<option value="Automatizacion">Automatización</option>
-
-
- </select>
-                                                    </div>
-												
-												
-												
-                                                    <div class="form-group">
-                                                        <label for="default" class="control-label">Descripción</label>
- <input type="text" name="descrip" class="form-control" id="default" placeholder="Ingrese los datos" required="required">
-                                                    </div>
-												
-	<div class="form-group">
-                                                     <label for="date" class=" control-label"></label>
-														<select name="estado" class="form-control" id="default" required="required">
-<option value="">Seleccione Estatus del Equipo </option>
-<option value="Nuevo">Nuevo </option>
-<option value="Asignado">Asignado</option>
-<option value="En Deposito">En Deposito</option>
-
- </select>
-                                                    </div>
-                                                    
-													<div class="form-group">
-                                                        <label for="default" class="control-label">Etiqueta</label>
- <input type="text" name="etiqueta" class="form-control" id="default" placeholder="Ingrese los datos" required="required">
-                                                    </div>
-                                                    
-													<div class="form-group">
-                                                        <label for="default" class="control-label">Serial</label>
- <input type="text" name="serial" class="form-control" id="default" placeholder="Ingrese los datos" required="required">
-                                                    </div>
-                                                    	<div class="form-group">
-                                                        <label for="default" class="control-label">Modelo</label>
- <input type="text" name="modelo" class="form-control" id="default" placeholder="Ingrese los datos" required="required">
-                                                    </div>
-														<div class="form-group">
-                                                        <label for="default" class="control-label">Marca</label>
- <input type="text" name="marca" class="form-control" id="default" placeholder="Ingrese los datos" required="required">
-                                                    </div>
-														<div class="form-group">
-                                                        <label for="default" class="control-label">Dirección IP O MAC</label>
- <input type="text" name="ip_mac" class="form-control" id="default" placeholder="Ingrese los datos" required="required">
-                                                    </div>
-	<div class="form-group">
-	
-	      <label for="date" class=" control-label"></label>
-														<select name="ubicacion" class="form-control" id="default" required="required">
-<option value="">Seleccione Ubicación</option>
-<option value="Asignado">Asignado</option>
-<option value="Deposito División Junin">Deposito División Junin</option>
-<option value="Deposito Petro SanFelix">Deposito Petro SanFelix</option>
-<option value="Deposito Petrocedeno">Deposito Petrocedeño</option>
-<option value="Deposito IndoVenezolana">Deposito IndoVenezolana</option>
-
- </select>
-                                                    </div>
-
-                                                    
-                                                    <div class="form-group">
-                                                        
-                                                            <button type="submit" name="submit" class="btn btn-primary">Guardar</button>
-                                                       
-                                                            <button type="reset" name="reset" class="btn btn-danger">Limpiar</button>
-                                                       
-                                                    </div>
-                                                </form>
-
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <!-- /.col-md-12 -->
-                                </div>
-                    </div>
-                </section>
-                </div>
-                <!-- /.content-container -->
+<?php include __DIR__ . '/includes/topbar.php'; ?>
+<div class="content-wrapper">
+  <div class="content-container">
+    <?php include __DIR__ . '/includes/leftbar.php'; ?>
+    <div class="main-page">
+      <div class="container-fluid">
+        <div class="row page-title-div"><div class="col-md-12"><h2 class="title">Registrar activo tecnológico</h2></div></div>
+        <div class="row breadcrumb-div"><div class="col-md-12"><ul class="breadcrumb"><li><a href="dashboard.php"><i class="fa fa-home"></i> Inicio</a></li><li> Gestión de activos</li><li class="active"> Registrar activo</li></ul></div></div>
+      </div>
+      <section class="section"><div class="container-fluid"><div class="row"><div class="col-md-10 col-md-offset-1"><div class="panel">
+        <div class="panel-heading"><div class="panel-title"><h5>Nuevo registro de inventario</h5></div></div>
+        <div class="panel-body">
+          <?php if ($msg !== ''): ?><div class="alert alert-success" role="alert"><?php echo htmlspecialchars($msg, ENT_QUOTES, 'UTF-8'); ?></div><?php endif; ?>
+          <?php if ($error !== ''): ?><div class="alert alert-danger" role="alert"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div><?php endif; ?>
+          <form method="post" id="formActivo" autocomplete="off">
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_activo'], ENT_QUOTES, 'UTF-8'); ?>">
+            <div class="form-group">
+              <label for="categoria">Tipo de activo <span class="text-danger">*</span></label>
+              <select class="form-control" id="categoria" name="categoria" required>
+                <option value="">Seleccione un tipo de activo</option>
+                <?php foreach ($categorias as $codigo => $nombre): ?><option value="<?php echo htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8'); ?></option><?php endforeach; ?>
+              </select>
             </div>
+
+            <div id="formularioActivo" style="display:none;">
+              <hr><h4>Información general del activo</h4>
+              <div class="row">
+                <div class="col-md-6 form-group"><label for="codigo_placa">Número de placa</label><input class="form-control" id="codigo_placa" name="codigo_placa" maxlength="60"></div>
+                <div class="col-md-6 form-group"><label>Código de inventario</label><input class="form-control" value="Se genera automáticamente al guardar" readonly></div>
+                <div class="col-md-6 form-group"><label for="marca">Marca</label><input class="form-control" id="marca" name="marca" maxlength="100"></div>
+                <div class="col-md-6 form-group"><label for="modelo">Modelo</label><input class="form-control" id="modelo" name="modelo" maxlength="120"></div>
+                <div class="col-md-6 form-group"><label for="numero_serial">Número de serial</label><input class="form-control" id="numero_serial" name="numero_serial" maxlength="150"></div>
+                <div class="col-md-6 form-group"><label for="estado">Estado <span class="text-danger">*</span></label><select class="form-control" id="estado" name="estado" required><?php foreach ($estados as $codigo => $nombre): ?><option value="<?php echo htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8'); ?></option><?php endforeach; ?></select></div>
+              </div>
+              <h4>Ubicación del activo</h4>
+              <div class="row">
+                <div class="col-md-6 form-group"><label for="sede_id">Sede <span class="text-danger">*</span></label><select class="form-control" id="sede_id" name="sede_id" required><option value="">Seleccione sede</option><?php foreach ($sedes as $sede): ?><option value="<?php echo (int) $sede['id']; ?>"><?php echo htmlspecialchars($sede['nombre'], ENT_QUOTES, 'UTF-8'); ?></option><?php endforeach; ?></select></div>
+                <div class="col-md-6 form-group"><label for="tipo_ubicacion">Tipo de ubicación</label><select class="form-control" id="tipo_ubicacion" name="tipo_ubicacion"><option value="">Seleccione</option><option>Cuarto técnico</option><option>Oficina</option><option>Área común</option><option>Centro de datos</option><option>Almacén</option><option>Otro</option></select></div>
+                <div class="col-md-6 form-group"><label for="ubicacion_nombre">Ubicación / espacio <span class="text-danger">*</span></label><input class="form-control" id="ubicacion_nombre" name="ubicacion_nombre" placeholder="Ej. Oficina de sistemas, cuarto técnico" required maxlength="150"></div>
+                <div class="col-md-6 form-group"><label for="piso">Piso</label><input class="form-control" id="piso" name="piso" maxlength="30"></div>
+                <div class="col-md-6 form-group"><label for="area_departamento">Área o departamento</label><input class="form-control" id="area_departamento" name="area_departamento" placeholder="Ej. Contabilidad, Recepción, Gerencia" maxlength="120"></div>
+                <div class="col-md-6 form-group"><label for="detalle_ubicacion">Detalle adicional</label><input class="form-control" id="detalle_ubicacion" name="detalle_ubicacion" maxlength="255"></div>
+              </div>
+              <div class="form-group"><label for="descripcion">Descripción general / observaciones</label><textarea class="form-control" id="descripcion" name="descripcion" rows="2"></textarea></div>
+
+              <fieldset class="category-fields" data-category="COMPUTO" disabled style="display:none;">
+                <hr><h4>Formulario: equipos de cómputo</h4><div class="row">
+                  <div class="col-md-6 form-group"><label>Tipo de equipo *</label><select class="form-control" name="tipo_equipo" required><option value="">Seleccione</option><option value="ESCRITORIO">Escritorio</option><option value="PORTATIL">Portátil</option></select></div>
+                  <div class="col-md-6 form-group"><label>Capacidad de disco</label><input class="form-control" name="capacidad_disco" placeholder="Ej. 512 GB"></div>
+                  <div class="col-md-6 form-group"><label>Tipo de disco</label><input class="form-control" name="tipo_disco" placeholder="Ej. SSD, HDD, NVMe"></div>
+                  <div class="col-md-6 form-group"><label>Capacidad RAM</label><input class="form-control" name="capacidad_ram" placeholder="Ej. 16 GB"></div>
+                  <div class="col-md-6 form-group"><label>Procesador</label><input class="form-control" name="procesador"></div>
+                  <div class="col-md-6 form-group"><label>Dirección IP</label><input class="form-control" name="direccion_ip"></div>
+                  <div class="col-md-6 form-group"><label>MAC</label><input class="form-control" name="mac"></div>
+                  <div class="col-md-6 form-group"><label>Versión del sistema operativo</label><input class="form-control" name="version_so"></div>
+                  <div class="col-md-12 form-group"><label>Descripción del equipo</label><textarea class="form-control" name="descripcion_equipo" rows="2"></textarea></div>
+                </div>
+              </fieldset>
+
+              <fieldset class="category-fields" data-category="IMPRESION" disabled style="display:none;">
+                <hr><h4>Formulario: dispositivos de impresión</h4><div class="row">
+                  <div class="col-md-6 form-group"><label>Tipo de impresora *</label><select class="form-control" name="tipo_impresora" required><option value="">Seleccione</option><option value="LASER">Láser</option><option value="INYECCION_TINTA">Inyección de tinta</option><option value="MATRICIAL">Matricial</option><option value="TERMICA">Térmica</option><option value="MULTIFUNCIONAL">Multifuncional</option></select></div>
+                  <div class="col-md-6 form-group"><label>Dirección IP</label><input class="form-control" name="direccion_ip"></div>
+                  <div class="col-md-6 form-group"><label>MAC</label><input class="form-control" name="mac"></div>
+                  <div class="col-md-6 form-group"><label>Último cambio de suministro</label><input class="form-control" type="date" name="fecha_ultimo_cambio_suministro"></div>
+                  <div class="col-md-6 form-group"><label>Tipo de suministro</label><input class="form-control" name="tipo_suministro" placeholder="Tóner, tinta, cinta, etc."></div>
+                  <div class="col-md-12 form-group"><label>Observaciones de suministro / reparación</label><textarea class="form-control" name="observaciones_suministro" rows="2" placeholder="El historial de reparaciones se gestionará desde Mantenimientos."></textarea></div>
+                </div>
+              </fieldset>
+
+              <fieldset class="category-fields" data-category="PERIFERICO" disabled style="display:none;">
+                <hr><h4>Formulario: periféricos</h4><div class="row">
+                  <div class="col-md-6 form-group"><label>Tipo de periférico *</label><select class="form-control" name="tipo_periferico" required><option value="">Seleccione</option><option>Monitor</option><option>Teclado</option><option>Mouse</option><option>Auriculares / Diadema</option><option>Webcam</option><option>Disco duro externo</option><option>Otro</option></select></div>
+                  <div class="col-md-12 form-group"><label>Descripción del periférico</label><textarea class="form-control" name="descripcion_periferico" rows="2"></textarea></div>
+                </div>
+              </fieldset>
+
+              <fieldset class="category-fields" data-category="TELEFONIA" disabled style="display:none;">
+                <hr><h4>Formulario: telefonía</h4><div class="row">
+                  <div class="col-md-6 form-group"><label>Número telefónico / extensión</label><input class="form-control" name="numero_extension" maxlength="60"></div>
+                  <div class="col-md-6 form-group"><label>Proveedor</label><input class="form-control" name="proveedor" maxlength="120"></div>
+                  <div class="col-md-6 form-group"><label>Tipo de equipo *</label><select class="form-control" name="tipo_telefonia" required><option value="">Seleccione</option><option value="SMARTPHONE">Smartphone</option><option value="TELEFONO_ESCRITORIO">Teléfono de escritorio</option><option value="ROUTER">Router</option><option value="SIM_CARD">SIM Card</option></select></div>
+                  <div class="col-md-12 form-group"><label>Descripción</label><textarea class="form-control" name="descripcion_telefonia" rows="2"></textarea></div>
+                </div>
+              </fieldset>
+
+              <fieldset class="category-fields" data-category="SERVIDOR" disabled style="display:none;">
+                <hr><h4>Formulario: servidores</h4><div class="row">
+                  <div class="col-md-6 form-group"><label>Nombre del servidor / Hostname</label><input class="form-control" name="hostname" maxlength="120"></div>
+                  <div class="col-md-6 form-group"><label>Rack / Gabinete</label><input class="form-control" name="rack_gabinete" maxlength="100"></div>
+                  <div class="col-md-6 form-group"><label>Dirección IP</label><input class="form-control" name="direccion_ip"></div>
+                  <div class="col-md-6 form-group"><label>Procesador</label><input class="form-control" name="procesador"></div>
+                  <div class="col-md-6 form-group"><label>Memoria RAM</label><input class="form-control" name="memoria_ram"></div>
+                  <div class="col-md-6 form-group"><label>Sistema operativo</label><input class="form-control" name="sistema_operativo"></div>
+                  <div class="col-md-6 form-group"><label>Versión</label><input class="form-control" name="version_so"></div>
+                  <div class="col-md-12 form-group"><label>Aplicaciones / roles principales</label><textarea class="form-control" name="aplicaciones_roles" rows="2"></textarea></div>
+                  <div class="col-md-12 form-group"><label>Descripción del servidor</label><textarea class="form-control" name="descripcion_servidor" rows="2"></textarea></div>
+                </div>
+                <div class="clearfix"><h4 class="pull-left">Almacenamiento: discos del servidor</h4><button type="button" class="btn btn-default btn-sm pull-right" id="agregarDisco"><i class="fa fa-plus"></i> Agregar disco</button></div>
+                <div id="listaDiscos"><div class="row disco-item" style="border:1px solid #eee;padding:10px;margin:8px 0;"><div class="col-md-3 form-group"><label>Tipo</label><input class="form-control" name="disco_tipo[]" placeholder="SSD / HDD"></div><div class="col-md-3 form-group"><label>Capacidad *</label><input class="form-control" name="disco_capacidad[]" placeholder="Ej. 2 TB" required></div><div class="col-md-2 form-group"><label>Modelo</label><input class="form-control" name="disco_modelo[]"></div><div class="col-md-2 form-group"><label>Serial</label><input class="form-control" name="disco_serial[]"></div><div class="col-md-2 form-group"><label>RAID</label><input class="form-control" name="disco_raid[]"></div></div></div>
+              </fieldset>
+
+              <fieldset class="category-fields" data-category="INFRAESTRUCTURA" disabled style="display:none;">
+                <hr><h4>Formulario: infraestructura tecnológica</h4><div class="row">
+                  <div class="col-md-6 form-group"><label>Nombre / Tipo de dispositivo *</label><select class="form-control" name="tipo_dispositivo" required><option value="">Seleccione</option><option>Switch</option><option>Router</option><option>Access Point</option><option>Otro</option></select></div>
+                  <div class="col-md-6 form-group"><label>Cantidad de puertos</label><input class="form-control" type="number" min="0" name="cantidad_puertos"></div>
+                  <div class="col-md-6 form-group"><label>Dirección IP</label><input class="form-control" name="direccion_ip"></div>
+                  <div class="col-md-6 form-group"><label>MAC</label><input class="form-control" name="mac"></div>
+                  <div class="col-md-12 form-group"><label>Descripción</label><textarea class="form-control" name="descripcion_infraestructura" rows="2"></textarea></div>
+                </div>
+              </fieldset>
+
+              <div class="form-group" style="margin-top:20px;"><button type="submit" name="guardar_activo" class="btn btn-primary"><i class="fa fa-save"></i> Guardar activo</button> <button type="reset" class="btn btn-danger" id="limpiarActivo">Limpiar</button></div>
+            </div>
+          </form>
         </div>
-            <!-- /.content-wrapper -->
-<?php include('includes/footer.php');?>
-
-<!--  Author Name: Mayuri K. 
- for any PHP, Codeignitor, Laravel OR Python work contact me at mayuri.infospace@gmail.com  
- Visit website : www.mayurik.com -->  
-
-<?PHP } ?>
+      </div></div></div></div></section>
+    </div>
+  </div>
+</div>
+<?php include __DIR__ . '/includes/footer.php'; ?>
+<script>
+(function () {
+    var selector = document.getElementById('categoria');
+    var wrapper = document.getElementById('formularioActivo');
+    var fieldsets = document.querySelectorAll('.category-fields');
+    function actualizarFormulario() {
+        var categoria = selector.value;
+        wrapper.style.display = categoria ? 'block' : 'none';
+        fieldsets.forEach(function (fieldset) {
+            var activo = fieldset.getAttribute('data-category') === categoria;
+            fieldset.style.display = activo ? 'block' : 'none';
+            fieldset.disabled = !activo;
+        });
+    }
+    selector.addEventListener('change', actualizarFormulario);
+    document.getElementById('limpiarActivo').addEventListener('click', function () {
+        window.setTimeout(function () { selector.value = ''; actualizarFormulario(); }, 0);
+    });
+    var addDisk = document.getElementById('agregarDisco');
+    if (addDisk) {
+        addDisk.addEventListener('click', function () {
+            var template = document.querySelector('#listaDiscos .disco-item');
+            var clone = template.cloneNode(true);
+            clone.querySelectorAll('input').forEach(function (input) { input.value = ''; });
+            var remove = document.createElement('div');
+            remove.className = 'col-md-12 text-right';
+            remove.innerHTML = '<button type="button" class="btn btn-danger btn-xs quitar-disco">Quitar disco</button>';
+            clone.appendChild(remove);
+            clone.querySelector('.quitar-disco').addEventListener('click', function () { clone.remove(); });
+            document.getElementById('listaDiscos').appendChild(clone);
+        });
+    }
+    actualizarFormulario();
+})();
+</script>
+<?php
+?>
