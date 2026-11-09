@@ -6,59 +6,71 @@ if (strlen($_SESSION['alogin']) == "") {
     header("Location: index.php");
 } else {
 ?>
-    <!DOCTYPE html>
-    <html lang="es">
+    <?php include('includes/topbar.php'); ?>
+<link rel="stylesheet" type="text/css" href="assets/js/DataTables/datatables.min.css">
 
-    <head>
-        <meta charset="utf-8">
-        <meta http-equiv="X-UA-Compatible" content="IE=edge">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Gestión de Activos - Ver Activos</title>
-        
-        <!-- Estilos de DataTables -->
-        <link rel="stylesheet" type="text/css" href="assets/js/DataTables/datatables.min.css"/>
-        
-        <!-- Estilo CSS optimizado para impresión -->
-        <style>
-            @media print {
-                body * {
-                    visibility: hidden;
-                }
+<style>
+/* ==========================================
+   TIPOGRAFÍA DE LA TABLA - VER ACTIVOS
+   Mantener la fuente Montserrat del sistema
+========================================== */
 
-                #example,
-                #example * {
-                    visibility: visible;
-                }
+/* Controles de DataTables */
+#example_wrapper,
+#example_wrapper label,
+#example_wrapper .dataTables_info,
+#example_wrapper .dataTables_paginate,
+#example_wrapper .paginate_button,
+#example_wrapper .dataTables_length,
+#example_wrapper .dataTables_filter {
+    font-family: "Montserrat", sans-serif !important;
+    font-weight: 400;
+    color: #494949;
+    font-size: inherit;
+}
 
-                #example {
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                    width: 100%;
-                }
+/* Campos de búsqueda y selección */
+#example_wrapper input,
+#example_wrapper select {
+    font-family: "Montserrat", sans-serif !important;
+    font-size: 13px;
+    font-weight: 400;
+    color: #494949;
+}
 
-                .btn,
-                .panel-heading,
-                .nav,
-                footer,
-                .footer,
-                .dataTables_length,
-                .dataTables_filter,
-                .dataTables_info,
-                .dataTables_paginate {
-                    display: none !important;
-                }
-            }
-        </style>
-    </head>
+/* Botones de paginación */
+#example_wrapper .paginate_button {
+    font-weight: 500;
+}
 
-    <body class="top-navbar-fixed">
-        <div class="main-wrapper">
-            <!-- ========== TOP NAVBAR ========== -->
-            <?php include('includes/topbar.php'); ?>
-            
-            <!-- ========== WRAPPER FOR BOTH SIDEBARS & MAIN CONTENT ========== -->
-            <div class="content-wrapper">
+/* Texto de información de registros */
+#example_wrapper .dataTables_info {
+    font-size: 12px;
+}
+
+/* Encabezados y contenido de la tabla */
+#example {
+    font-family: "Montserrat", sans-serif;
+}
+
+#example th,
+#example td {
+    font-family: "Montserrat", sans-serif;
+    font-size: 13px;
+}
+</style>
+
+<style>
+@media print {
+    body * { visibility: hidden; }
+    #example, #example * { visibility: visible; }
+    #example { position: absolute; left: 0; top: 0; width: 100%; }
+    .btn, .panel-heading, .nav, footer, .footer,
+    .dataTables_length, .dataTables_filter, .dataTables_info,
+    .dataTables_paginate { display: none !important; }
+}
+</style>
+<div class="content-wrapper">
                 <div class="content-container">
                     <!-- ========== LEFTBAR ========== -->
                     <?php include('includes/leftbar.php'); ?>
@@ -67,6 +79,7 @@ if (strlen($_SESSION['alogin']) == "") {
                         <div class="container-fluid">
                             <div class="row page-title-div">
                                 <div class="col-md-6">
+                                    <hr>
                                     <h2 class="title">Gestión de Activos</h2>
                                 </div>
                             </div>
@@ -165,36 +178,18 @@ if (strlen($_SESSION['alogin']) == "") {
                 </div>
             </div>
             <?php include('includes/footer.php'); ?>
-        </div>
+<script>
+$(function () {
+    // Reutilizar la instancia inicializada en includes/footer.php.
+    var tabla = $('#example').DataTable();
 
-        <!-- Archivos JS necesarios -->
-        <script src="assets/js/jquery/jquery/jquery.min.js"></script>
-        <script src="assets/js/bootstrap/bootstrap.min.js"></script>
-        <script src="assets/js/pace/pace.min.js"></script>
-        <script src="assets/js/lobipanel/lobipanel.min.js"></script>
-        <script src="assets/js/iscroll/iscroll.js"></script>
-        <script type="text/javascript" src="assets/js/DataTables/datatables.min.js"></script>
-        <script src="assets/js/main.js"></script>
-        
-        <script>
-            $(document).ready(function() {
-                // Inicializar DataTables
-                var table = $('#example').DataTable();
+    $('#filtroTipo').on('change', function () {
+        tabla.column(1).search(this.value).draw();
+    });
+});
 
-                // Evento para filtrar la tabla automáticamente cuando cambie el selector
-                $('#filtroTipo').on('change', function() {
-                    var tipoSeleccionado = $(this).val();
-                    // La columna 1 corresponde a "Tipo de Activo" (empezando desde 0)
-                    table.column(1).search(tipoSeleccionado).draw();
-                });
-            });
-
-            // Función que se ejecuta al hacer clic en el botón de imprimir / PDF
-            function imprimirFiltrado() {
-                window.print();
-            }
-        </script>
-    </body>
-
-    </html>
+function imprimirFiltrado() {
+    window.print();
+}
+</script>
 <?php } ?>

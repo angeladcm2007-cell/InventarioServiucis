@@ -4,4 +4,4 @@ Password : admin
 
 Departamento de sistemas
 Sistemas
-Sistemas123/*
+Sistemas123/

@@ -66,15 +66,38 @@
         <script src="assets/js/task-list.js"></script>
          <script>
             $(function($) {
-                $('#example').DataTable();
+                var idiomaEspanol = {
+                    "decimal": "",
+                    "emptyTable": "No hay información disponible",
+                    "info": "Mostrando _START_ a _END_ de _TOTAL_ registros",
+                    "infoEmpty": "Mostrando 0 a 0 de 0 registros",
+                    "infoFiltered": "(filtrado de _MAX_ registros en total)",
+                    "lengthMenu": "Mostrar _MENU_ registros",
+                    "loadingRecords": "Cargando...",
+                    "processing": "Procesando...",
+                    "search": "Buscar:",
+                    "zeroRecords": "No se encontraron resultados",
+                    "paginate": {
+                        "first": "Primero",
+                        "last": "Último",
+                        "next": "Siguiente",
+                        "previous": "Anterior"
+                    },
+                    "aria": {
+                        "sortAscending": ": activar para ordenar ascendentemente",
+                        "sortDescending": ": activar para ordenar descendentemente"
+                    }
+                };
 
-                $('#example2').DataTable( {
+                $('#example').DataTable({ language: idiomaEspanol });
+                $('#example2').DataTable({
+                    language: idiomaEspanol,
                     "scrollY":        "300px",
                     "scrollCollapse": true,
                     "paging":         false
                 } );
 
-                $('#example3').DataTable();
+                $('#example3').DataTable({ language: idiomaEspanol });
             });
         </script>
         <script>
