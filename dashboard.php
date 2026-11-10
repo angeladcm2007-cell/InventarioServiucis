@@ -16,8 +16,17 @@ function obtenerTotal($dbh, $sql) {
     return (int)$stmt->fetchColumn();
 }
 
+
 try {
-    $totalActivos = obtenerTotal($dbh, "SELECT COUNT(*) FROM activos");
+    // Contar los activos registrados en las tablas secundarias
+    $totalActivos = obtenerTotal(
+        $dbh,
+        "SELECT
+            (SELECT COUNT(*) FROM equipos_computo) +
+            (SELECT COUNT(*) FROM dispositivos_impresion)"
+    );
+
+    // Los demás indicadores permanecen sin cambios
     $asignacionesActivas = obtenerTotal($dbh, "SELECT COUNT(*) FROM asignaciones WHERE estado_asignacion = 'ACTIVA'");
     $totalPersonas = obtenerTotal($dbh, "SELECT COUNT(*) FROM personas WHERE estado = 'ACTIVA'");
     $mantenimientosPendientes = obtenerTotal($dbh, "SELECT COUNT(*) FROM mantenimientos WHERE resultado = 'PENDIENTE'");
@@ -33,9 +42,11 @@ try {
                      LEFT JOIN sedes s ON s.id = u.sede_id
                      ORDER BY a.fecha_creacion DESC, a.id DESC
                      LIMIT 10";
+
     $stmtRecientes = $dbh->query($sqlRecientes);
     $asignacionesRecientes = $stmtRecientes->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
+}
+ catch (PDOException $e) {
     error_log('Error en dashboard: ' . $e->getMessage());
     http_response_code(500);
     exit('No fue posible cargar el panel. Verifique la estructura de la base de datos y la conexión.');
