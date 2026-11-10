@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/includes/config.php';
+require_once __DIR__ . '/identificadores_activos.php';
 
 if (empty($_SESSION['alogin']) || empty($_SESSION['uid'])) {
     header('Location: index.php');
@@ -103,6 +104,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
                 $marca = trim(isset($_POST['marca']) ? (string) $_POST['marca'] : '');
                 $modelo = trim(isset($_POST['modelo']) ? (string) $_POST['modelo'] : '');
                 $serial = trim(isset($_POST['numero_serial']) ? (string) $_POST['numero_serial'] : '');
+                if (invNormalizarSerial($serial) === null) { $serial = ''; }
+                $mac = in_array($categoriaCodigo, array('COMPUTO','IMPRESION','INFRAESTRUCTURA'), true) ? trim((string)($_POST['mac'] ?? '')) : '';
+                if ($mac !== '' && invNormalizarMac($mac) === null) { $mac = ''; }
+                invValidarIdentificadores($dbh, $serial, $mac);
                 $descripcion = trim(isset($_POST['descripcion']) ? (string) $_POST['descripcion'] : '');
                 $codigoGenerado = 'PENDIENTE-' . strtoupper(bin2hex(random_bytes(8)));
 
@@ -144,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
                         ':ram' => trim((string) $_POST['capacidad_ram']),
                         ':procesador' => trim((string) $_POST['procesador']),
                         ':ip' => trim((string) $_POST['direccion_ip']),
-                        ':mac' => trim((string) $_POST['mac']),
+                        ':mac' => ($mac !== '' ? $mac : null),
                         ':so' => trim((string) $_POST['version_so']),
                         ':descripcion' => trim((string) $_POST['descripcion_equipo'])
                     ));
@@ -154,7 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
                         ':activo_id' => $activoId,
                         ':tipo' => $_POST['tipo_impresora'],
                         ':ip' => trim((string) $_POST['direccion_ip']),
-                        ':mac' => trim((string) $_POST['mac']),
+                        ':mac' => ($mac !== '' ? $mac : null),
                         ':fecha' => (($_POST['fecha_ultimo_cambio_suministro'] ?? '') !== '' ? $_POST['fecha_ultimo_cambio_suministro'] : null),
                         ':suministro' => trim((string) $_POST['tipo_suministro']),
                         ':observaciones' => trim((string) $_POST['observaciones_suministro'])
@@ -220,12 +225,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_activo'])) {
                         ':tipo' => $_POST['tipo_dispositivo'],
                         ':puertos' => ($puertos !== '' ? (int) $puertos : null),
                         ':ip' => trim((string) $_POST['direccion_ip']),
-                        ':mac' => trim((string) $_POST['mac']),
+                        ':mac' => ($mac !== '' ? $mac : null),
                         ':piso' => ($piso !== '' ? $piso : null),
                         ':descripcion' => trim((string) $_POST['descripcion_infraestructura'])
                     ));
                 }
 
+                invSincronizarIdentificadores($dbh, $activoId, $serial, $mac);
                 $dbh->commit();
                 $msg = 'Activo registrado correctamente. Código de inventario: ' . $codigoGenerado;
                 $_SESSION['csrf_activo'] = bin2hex(random_bytes(32));
