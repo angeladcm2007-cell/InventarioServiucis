@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="assets/css/icheck/skins/line/red.css">
     <link rel="stylesheet" href="assets/css/icheck/skins/line/green.css">
     <link rel="stylesheet" href="assets/css/main.css" media="screen">
+    <link rel="stylesheet" href="assets/js/DataTables/Buttons-1.2.4/css/buttons.bootstrap.min.css">
     <link rel="stylesheet" href="assets/css/prism/prism.css" media="screen">
 
     <!-- <link rel="stylesheet" type="text/css" href="assets/js/DataTables/datatables.min.css"/> -->

@@ -106,9 +106,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
 
                                        <div class="text-center"><br>
                                           <a href="#">
-                    <img style="height: 70px" src="assets/images/logo-footer.png"></a>
+                    <img style="height: 100px" src="assets/images/logo-footer.png"></a>
                     <br>
-                                          <h5 style="color: #000000;"> <strong>[ SISAT V.1.1 ]</strong></h5>
+                                          <h5 style="color: #307e91ff;"> <strong>INVENTARIO SERVIUCIS</strong></h5>
                                        </div>
                                     </div>
                                     <div class="panel-body p-20">

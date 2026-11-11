@@ -7,7 +7,8 @@ if (empty($_SESSION['alogin'])) {
     exit;
 }
 
-function h($value) {
+function h($value)
+{
     return htmlspecialchars((string)($value ?? ''), ENT_QUOTES, 'UTF-8');
 }
 
@@ -94,7 +95,9 @@ $tipos = array(
     'SIM_CARD' => 'SIM Card'
 );
 ?>
-<link rel="stylesheet" type="text/css" href="assets/js/DataTables/datatables.min.css"/>
+<link rel="stylesheet" type="text/css" href="assets/js/DataTables/datatables.min.css" />
+<link rel="stylesheet"
+    href="assets/js/DataTables/Buttons-1.2.4/css/buttons.bootstrap.min.css">
 <?php include('includes/topbar.php'); ?>
 <div class="content-wrapper">
     <div class="content-container">
@@ -131,8 +134,45 @@ $tipos = array(
                                     <?php if ($errorListado !== ''): ?>
                                         <div class="alert alert-danger" role="alert"><?php echo h($errorListado); ?></div>
                                     <?php elseif (count($activos) > 0): ?>
+
+                                        <?php
+                                        // Obtener las categorías que realmente existen en los activos registrados
+                                        $categoriasFiltro = array();
+
+                                        foreach ($activos as $registro) {
+                                            $categoriaActual = trim((string)($registro['categoria'] ?? ''));
+
+                                            if ($categoriaActual !== '') {
+                                                $categoriasFiltro[] = $categoriaActual;
+                                            }
+                                        }
+
+                                        $categoriasFiltro = array_unique($categoriasFiltro);
+                                        natcasesort($categoriasFiltro);
+                                        ?>
+
+                                        <div class="row" style="margin-bottom: 20px;">
+                                            <div class="col-md-4">
+                                                <label for="filtroTipo">Seleccionar tipo de activo:</label>
+
+                                                <select id="filtroTipo" class="form-control">
+                                                    <option value="">Todos los tipos de activos</option>
+
+                                                    <?php foreach ($categoriasFiltro as $categoria): ?>
+                                                        <option value="<?php echo h($categoria); ?>">
+                                                            <?php echo h($categoria); ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                        </div>
+
                                         <div class="table-responsive">
-                                            <table id="example" class="display table table-striped table-bordered" cellspacing="0" width="100%">
+                                            <table id="example"
+                                                data-exportar="1"
+                                                class="display table table-striped table-bordered"
+                                                cellspacing="0"
+                                                width="100%">
                                                 <thead>
                                                     <tr>
                                                         <th>#</th>

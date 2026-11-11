@@ -37,9 +37,14 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_asignacion'])) 
             }
         }
         $dbh->beginTransaction();
-        $check = $dbh->prepare("SELECT id FROM activos WHERE id=:id AND estado <> 'DADO_DE_BAJA_OBSOLETO' FOR UPDATE");
+                $check = $dbh->prepare("SELECT a.id, u.area_departamento FROM activos a LEFT JOIN ubicaciones u ON u.id=a.ubicacion_id WHERE a.id=:id AND a.estado <> 'DADO_DE_BAJA_OBSOLETO' FOR UPDATE");
         $check->execute(array(':id'=>$activoId));
-        if (!$check->fetchColumn()) throw new RuntimeException('El activo seleccionado no existe o está dado de baja.');
+        $activoSeleccionado = $check->fetch(PDO::FETCH_ASSOC);
+        if (!$activoSeleccionado) throw new RuntimeException('El activo seleccionado no existe o está dado de baja.');
+        // Si el área no fue modificada o llegó vacía, conservar el área registrada en el inventario.
+        if ($tipo === 'PERSONA' && $areaDepartamentoAsignacion === '') {
+            $areaDepartamentoAsignacion = trim((string)($activoSeleccionado['area_departamento'] ?? ''));
+        }
         $dup = $dbh->prepare("SELECT numero_control FROM asignaciones WHERE activo_id=:id AND estado_asignacion='ACTIVA' LIMIT 1");
         $dup->execute(array(':id'=>$activoId));
         if ($dup->fetchColumn()) throw new RuntimeException('Este activo ya tiene una asignación activa. Cierra la asignación anterior antes de registrar otra.');
