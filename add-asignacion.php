@@ -4,11 +4,7 @@ require_once __DIR__ . '/includes/config.php';
 if (empty($_SESSION['alogin']) || empty($_SESSION['uid'])) { header('Location: index.php'); exit; }
 function h($v) { return htmlspecialchars((string)($v ?? ''), ENT_QUOTES, 'UTF-8'); }
 $msg = ''; $error = '';
-$activos = $dbh->query("SELECT a.id, a.codigo_inventario, COALESCE(a.descripcion, ca.nombre) AS descripcion_activo,
-    s.nombre AS sede, u.nombre AS ubicacion, u.area_departamento
-    FROM activos a INNER JOIN categorias_activos ca ON ca.id=a.categoria_id
-    LEFT JOIN ubicaciones u ON u.id=a.ubicacion_id LEFT JOIN sedes s ON s.id=u.sede_id
-    WHERE a.estado <> 'DADO_DE_BAJA_OBSOLETO' ORDER BY a.codigo_inventario")->fetchAll(PDO::FETCH_ASSOC);
+// Los activos se consultan bajo demanda mediante buscar-activos-asignacion.php.
 if (empty($_SESSION['csrf_asignacion'])) $_SESSION['csrf_asignacion'] = bin2hex(random_bytes(32));
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_asignacion'])) {
     try {
@@ -45,12 +41,13 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_asignacion'])) 
         if ($tipo === 'PERSONA' && $areaDepartamentoAsignacion === '') {
             $areaDepartamentoAsignacion = trim((string)($activoSeleccionado['area_departamento'] ?? ''));
         }
-        $dup = $dbh->prepare("SELECT numero_control FROM asignaciones WHERE activo_id=:id AND estado_asignacion='ACTIVA' LIMIT 1");
+        $dup = $dbh->prepare("SELECT numero_control FROM asignaciones WHERE activo_id=:id AND estado_asignacion IN ('ACTIVA','PENDIENTE_FIRMA') LIMIT 1");
         $dup->execute(array(':id'=>$activoId));
         if ($dup->fetchColumn()) throw new RuntimeException('Este activo ya tiene una asignación activa. Cierra la asignación anterior antes de registrar otra.');
         $numeroControl = 'ASIG-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
-        $ins = $dbh->prepare("INSERT INTO asignaciones (activo_id, persona_id, funcionario_receptor, area_departamento_asignacion, numero_control, fecha_asignacion, estado_asignacion, descripcion, registrado_por, tipo_asignacion) VALUES (:activo_id,:persona_id,:funcionario_receptor,:area_departamento_asignacion,:numero_control,:fecha,'ACTIVA',:descripcion,:registrado_por,:tipo)");
-        $ins->execute(array(':activo_id'=>$activoId, ':persona_id'=>$personaId, ':funcionario_receptor'=>($funcionarioReceptor!==''?$funcionarioReceptor:null), ':area_departamento_asignacion'=>($areaDepartamentoAsignacion!==''?$areaDepartamentoAsignacion:null), ':numero_control'=>$numeroControl, ':fecha'=>$fecha, ':descripcion'=>($descripcion!==''?$descripcion:null), ':registrado_por'=>(int)$_SESSION['uid'], ':tipo'=>$tipo));
+        $ins = $dbh->prepare("INSERT INTO asignaciones (activo_id, persona_id, funcionario_receptor, area_departamento_asignacion, numero_control, fecha_asignacion, estado_asignacion, descripcion, registrado_por, tipo_asignacion) VALUES (:activo_id,:persona_id,:funcionario_receptor,:area_departamento_asignacion,:numero_control,:fecha,:estado_asignacion,:descripcion,:registrado_por,:tipo)");
+        $estadoInicial = ($tipo === 'PERSONA') ? 'PENDIENTE_FIRMA' : 'ACTIVA';
+        $ins->execute(array(':estado_asignacion'=>$estadoInicial, ':activo_id'=>$activoId, ':persona_id'=>$personaId, ':funcionario_receptor'=>($funcionarioReceptor!==''?$funcionarioReceptor:null), ':area_departamento_asignacion'=>($areaDepartamentoAsignacion!==''?$areaDepartamentoAsignacion:null), ':numero_control'=>$numeroControl, ':fecha'=>$fecha, ':descripcion'=>($descripcion!==''?$descripcion:null), ':registrado_por'=>(int)$_SESSION['uid'], ':tipo'=>$tipo));
         $asignacionId=(int)$dbh->lastInsertId();
         // Conserva evidencia de quién registró la asignación y los datos capturados.
         $audit = $dbh->prepare("INSERT INTO auditoria (usuario_id, tabla_afectada, registro_id, accion, descripcion, direccion_ip) VALUES (:usuario, 'asignaciones', :registro, 'INSERT', :detalle, :ip)");
@@ -61,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_asignacion'])) 
             foreach($espacios as $fila) $areaIns->execute(array(':asignacion_id'=>$asignacionId, ':espacio'=>$fila[0], ':area'=>($fila[1]!==''?$fila[1]:null)));
         }
         $dbh->commit();
-        header('Location: manage-asignacion.php?registrada=1'); exit;
+        header('Location: manage-asignacion.php?registrada=1&estado='.urlencode($estadoInicial).'&id='.$asignacionId); exit;
     } catch (Throwable $e) {
         if ($dbh->inTransaction()) $dbh->rollBack();
         $error = $e instanceof PDOException ? 'No fue posible guardar la asignación. Verifica que hayas ejecutado la actualización SQL del módulo.' : $e->getMessage();
@@ -76,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_asignacion'])) 
 <?php if($error): ?><div class="alert alert-danger"><?php echo h($error); ?></div><?php endif; ?>
 <form method="post" id="formAsignacion"><input type="hidden" name="csrf_token" value="<?php echo h($_SESSION['csrf_asignacion']); ?>">
 <div class="row">
-<div class="col-md-6 form-group"><label>Activo *</label><select class="form-control" name="activo_id" id="activo_id" required><option value="">Seleccione un activo</option><?php foreach($activos as $a): ?><option value="<?php echo (int)$a['id']; ?>" data-codigo="<?php echo h($a['codigo_inventario']); ?>" data-descripcion="<?php echo h($a['descripcion_activo']); ?>" data-sede="<?php echo h($a['sede']); ?>" data-ubicacion="<?php echo h($a['ubicacion']); ?>" data-area="<?php echo h($a['area_departamento']); ?>"><?php echo h($a['codigo_inventario'].' — '.$a['descripcion_activo']); ?></option><?php endforeach; ?></select></div>
+<div class="col-md-6 form-group"><label for="buscarActivo">Buscar activo *</label><input type="text" class="form-control" id="buscarActivo" autocomplete="off" placeholder="Código, placa, marca, modelo, serial, categoría o sede"><small class="text-muted">Escribe al menos 2 caracteres. Se consultan hasta 30 coincidencias.</small><select class="form-control" id="resultadosActivos" size="5" style="margin-top:8px;display:none" aria-label="Resultados de activos"></select><input type="hidden" name="activo_id" id="activo_id"><div id="estadoBusqueda" class="help-block">Ningún activo seleccionado.</div></div>
 <div class="col-md-6 form-group"><label>Fecha de asignación *</label><input class="form-control" type="date" name="fecha_asignacion" value="<?php echo date('Y-m-d'); ?>" required></div>
 <div class="col-md-12"><div id="datosActivo" class="alert alert-info" style="display:none"><strong>Información tomada del inventario</strong><div class="row" style="margin-top:8px"><div class="col-md-3"><b>Código:</b> <span id="vCodigo"></span></div><div class="col-md-3"><b>Sede:</b> <span id="vSede"></span></div><div class="col-md-3"><b>Ubicación física:</b> <span id="vUbicacion"></span></div><div class="col-md-3"><b>Área registrada:</b> <span id="vArea"></span></div></div></div></div>
 <div class="col-md-12 form-group"><label>Tipo de asignación *</label><select class="form-control" name="tipo_asignacion" id="tipo_asignacion" required><option value="SEDE">Activo permanece en sede / uso compartido</option><option value="PERSONA">Entrega directa a una persona</option></select></div>
@@ -87,13 +84,18 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_asignacion'])) 
 </div></form></div></div></div></div></div></section></div></div></div>
 <script>
 (function(){
- var tipo=document.getElementById('tipo_asignacion'), secSede=document.getElementById('seccionCompartido'), secPersona=document.getElementById('seccionPersona'), receptor=document.getElementById('funcionario_receptor'), activo=document.getElementById('activo_id');
+ var tipo=document.getElementById('tipo_asignacion'),secSede=document.getElementById('seccionCompartido'),secPersona=document.getElementById('seccionPersona'),receptor=document.getElementById('funcionario_receptor');
+ var buscar=document.getElementById('buscarActivo'),resultados=document.getElementById('resultadosActivos'),activoId=document.getElementById('activo_id'),estado=document.getElementById('estadoBusqueda'),timer=null,seleccion=null;
  function cambiarTipo(){var individual=tipo.value==='PERSONA';secSede.style.display=individual?'none':'block';secPersona.style.display=individual?'block':'none';receptor.required=individual;document.querySelectorAll('#listaOficinas input').forEach(function(x){x.required=false;});}
- function mostrarActivo(){var o=activo.options[activo.selectedIndex], box=document.getElementById('datosActivo');if(!o||!o.value){box.style.display='none';document.getElementById('area_departamento_asignacion').value='';return;}box.style.display='block';['Codigo','Sede','Ubicacion','Area'].forEach(function(k){var key=k==='Codigo'?'codigo':(k==='Sede'?'sede':(k==='Ubicacion'?'ubicacion':'area'));document.getElementById('v'+k).textContent=o.getAttribute('data-'+key)||'No registrado';});document.getElementById('area_departamento_asignacion').value=o.getAttribute('data-area')||'';}
- tipo.addEventListener('change',cambiarTipo);activo.addEventListener('change',mostrarActivo);
+ function limpiarSeleccion(){activoId.value='';seleccion=null;document.getElementById('datosActivo').style.display='none';document.getElementById('area_departamento_asignacion').value='';estado.textContent='Ningún activo seleccionado.';}
+ function mostrarActivo(a){seleccion=a;activoId.value=a.id;estado.textContent='Seleccionado: '+a.codigo_inventario+' — '+a.descripcion+' | '+a.sede+' | '+a.estado;document.getElementById('datosActivo').style.display='block';document.getElementById('vCodigo').textContent=a.codigo_inventario||'No registrado';document.getElementById('vSede').textContent=a.sede||'No registrada';document.getElementById('vUbicacion').textContent=a.ubicacion||'No registrada';document.getElementById('vArea').textContent=a.area_departamento||'No registrada';document.getElementById('area_departamento_asignacion').value=a.area_departamento||'';}
+ function consultar(){var q=buscar.value.trim();limpiarSeleccion();resultados.innerHTML='';if(q.length<2){resultados.style.display='none';estado.textContent='Escribe al menos 2 caracteres para buscar.';return;}estado.textContent='Buscando activos...';fetch('buscar-activos-asignacion.php?q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}}).then(function(r){if(!r.ok)throw new Error('No fue posible consultar.');return r.json();}).then(function(data){resultados.innerHTML='';(data.results||[]).forEach(function(a){var op=document.createElement('option');op.value=a.id;op.disabled=!a.disponible;op.textContent=a.codigo_inventario+' | '+(a.descripcion||'Sin descripción')+' | '+(a.marca||'')+' '+(a.modelo||'')+' | '+(a.sede||'Sin sede')+' | '+(a.disponible?'Disponible':'Ya asignado');op._activo=a;resultados.appendChild(op);});resultados.style.display=(data.results&&data.results.length)?'block':'none';estado.textContent=(data.results&&data.results.length)?'Selecciona un resultado disponible. Los activos ya asignados se muestran deshabilitados.':'No se encontraron coincidencias.';}).catch(function(){resultados.style.display='none';estado.textContent='Error al buscar activos. Actualiza la página e inténtalo de nuevo.';});}
+ buscar.addEventListener('input',function(){clearTimeout(timer);limpiarSeleccion();timer=setTimeout(consultar,300);});resultados.addEventListener('change',function(){var op=resultados.options[resultados.selectedIndex];if(op&&op._activo&&!op.disabled)mostrarActivo(op._activo);});
+ tipo.addEventListener('change',cambiarTipo);
  document.getElementById('agregarOficina').addEventListener('click',function(){var div=document.createElement('div');div.className='oficina-item row';div.style.cssText='border:1px solid #eee;padding:12px;margin:8px 0;border-radius:4px';div.innerHTML='<div class="col-md-6 form-group"><label>Ubicación / espacio</label><input class="form-control" name="ubicacion_espacio[]" placeholder="Ej. Oficina de sistemas, cuarto técnico"></div><div class="col-md-5 form-group"><label>Área o departamento</label><input class="form-control" name="area_departamento[]" placeholder="Ej. Contabilidad, Recepción, Gerencia"></div><div class="col-md-1"><button type="button" class="btn btn-danger btn-sm quitar-oficina" style="margin-top:25px" title="Quitar oficina"><i class="fa fa-trash"></i></button></div>';document.getElementById('listaOficinas').appendChild(div);});
- document.getElementById('listaOficinas').addEventListener('click',function(e){var b=e.target.closest('.quitar-oficina');if(b){b.closest('.oficina-item').remove();}});
- cambiarTipo();mostrarActivo();
+ document.getElementById('listaOficinas').addEventListener('click',function(e){var b=e.target.closest('.quitar-oficina');if(b)b.closest('.oficina-item').remove();});
+ document.getElementById('formAsignacion').addEventListener('submit',function(e){if(!activoId.value){e.preventDefault();alert('Busca y selecciona un activo disponible antes de guardar.');}});
+ cambiarTipo();
 })();
 </script>
 <?php include __DIR__.'/includes/footer.php'; ?>
