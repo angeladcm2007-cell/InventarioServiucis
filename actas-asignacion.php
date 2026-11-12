@@ -1,64 +1,245 @@
 <?php
-session_start(); require_once __DIR__.'/includes/config.php';
-if(empty($_SESSION['alogin'])||empty($_SESSION['uid'])){header('Location: index.php');exit;}
-function h($v){return htmlspecialchars((string)($v??''),ENT_QUOTES,'UTF-8');}
-if(empty($_SESSION['csrf_actas'])) $_SESSION['csrf_actas']=bin2hex(random_bytes(32));
-$id=(int)($_GET['id']??$_POST['asignacion_id']??0); if($id<1){header('Location: manage-asignacion.php');exit;}
-$error=''; $ok=''; $archivoSubido=null;
-function obtenerAsignacion(PDO $dbh,int $id){$q=$dbh->prepare("SELECT x.*,a.codigo_inventario,a.codigo_placa,a.descripcion,a.marca,a.modelo,a.numero_serial,a.estado AS estado_activo,c.nombre AS categoria,u.nombre AS ubicacion,u.area_departamento,s.nombre AS sede FROM asignaciones x JOIN activos a ON a.id=x.activo_id JOIN categorias_activos c ON c.id=a.categoria_id LEFT JOIN ubicaciones u ON u.id=a.ubicacion_id LEFT JOIN sedes s ON s.id=u.sede_id WHERE x.id=?");$q->execute(array($id));return $q->fetch(PDO::FETCH_ASSOC);}
+session_start();
+require_once __DIR__ . '/includes/config.php';
+if (empty($_SESSION['alogin']) || empty($_SESSION['uid'])) {
+  header('Location: index.php');
+  exit;
+}
+function h($v)
+{
+  return htmlspecialchars((string)($v ?? ''), ENT_QUOTES, 'UTF-8');
+}
+if (empty($_SESSION['csrf_actas'])) $_SESSION['csrf_actas'] = bin2hex(random_bytes(32));
+$id = (int)($_GET['id'] ?? $_POST['asignacion_id'] ?? 0);
+if ($id < 1) {
+  header('Location: manage-asignacion.php');
+  exit;
+}
+$error = '';
+$ok = '';
+$archivoSubido = null;
+function obtenerAsignacion(PDO $dbh, int $id)
+{
+  $q = $dbh->prepare("SELECT x.*,a.codigo_inventario,a.codigo_placa,a.descripcion,a.marca,a.modelo,a.numero_serial,a.estado AS estado_activo,c.nombre AS categoria,u.nombre AS ubicacion,u.area_departamento,s.nombre AS sede FROM asignaciones x JOIN activos a ON a.id=x.activo_id JOIN categorias_activos c ON c.id=a.categoria_id LEFT JOIN ubicaciones u ON u.id=a.ubicacion_id LEFT JOIN sedes s ON s.id=u.sede_id WHERE x.id=?");
+  $q->execute(array($id));
+  return $q->fetch(PDO::FETCH_ASSOC);
+}
 try {
- if($_SERVER['REQUEST_METHOD']==='POST'){
-  if(!hash_equals($_SESSION['csrf_actas'],(string)($_POST['csrf_token']??''))) throw new RuntimeException('La sesión venció. Actualiza la página.');
-  $accion=(string)($_POST['accion']??''); $asig=obtenerAsignacion($dbh,$id);
-  if(!$asig) throw new RuntimeException('No se encontró la asignación.');
-  if($asig['tipo_asignacion']!=='PERSONA') throw new RuntimeException('Las actas individuales están habilitadas para asignaciones tipo PERSONA.');
-  if($accion==='entrega'){
-   if(!in_array($asig['estado_asignacion'],array('PENDIENTE_FIRMA','ACTIVA'),true)) throw new RuntimeException('La asignación no está en un estado válido para generar el acta de entrega.');
-   $q=$dbh->prepare("SELECT COUNT(*) FROM actas_asignaciones WHERE asignacion_id=? AND tipo_acta='ENTREGA'");$q->execute(array($id));if((int)$q->fetchColumn()>0)throw new RuntimeException('Esta asignación ya tiene un acta de entrega. Para corregirla debe generarse una nueva versión mediante el procedimiento de corrección documental.');
-   $detalle=array(); $tabla=array(1=>'equipos_computo',2=>'dispositivos_impresion',3=>'perifericos',4=>'telefonia',5=>'servidores',6=>'infraestructura');
-   $catId=(int)$dbh->query('SELECT categoria_id FROM activos WHERE id='.(int)$asig['activo_id'])->fetchColumn();
-   if(isset($tabla[$catId])){$st=$dbh->prepare('SELECT * FROM `'.$tabla[$catId].'` WHERE activo_id=? LIMIT 1');$st->execute(array($asig['activo_id']));$detalle=$st->fetch(PDO::FETCH_ASSOC)?:array();if($catId===5&&!empty($detalle['id'])){$d=$dbh->prepare('SELECT numero_disco,tipo_disco,capacidad,modelo,numero_serial,configuracion_raid,observaciones FROM servidor_discos WHERE servidor_id=? ORDER BY numero_disco');$d->execute(array($detalle['id']));$detalle['discos']=$d->fetchAll(PDO::FETCH_ASSOC);}}
-   $m=$dbh->prepare("SELECT tipo_mantenimiento,COALESCE(fecha_finalizacion,fecha_inicio,fecha_programada) AS fecha,resultado,trabajo_realizado,observaciones FROM mantenimientos WHERE activo_id=? AND COALESCE(fecha_finalizacion,fecha_inicio,fecha_programada) IS NOT NULL ORDER BY COALESCE(fecha_finalizacion,fecha_inicio,fecha_programada) DESC,id DESC LIMIT 1");$m->execute(array($asig['activo_id']));$ultimo=$m->fetch(PDO::FETCH_ASSOC)?:null;
-   $responsable=(string)($_SESSION['nombre_completo']??'Departamento de Sistemas');
-   $snapshot=array('tipo'=>'ENTREGA','numero_control'=>$asig['numero_control'],'fecha_asignacion'=>$asig['fecha_asignacion'],'funcionario_receptor'=>$asig['funcionario_receptor'],'area_departamento'=>$asig['area_departamento_asignacion'],'responsable_sistemas'=>$responsable,'activo'=>array('codigo_inventario'=>$asig['codigo_inventario'],'placa'=>$asig['codigo_placa'],'categoria'=>$asig['categoria'],'descripcion'=>$asig['descripcion'],'marca'=>$asig['marca'],'modelo'=>$asig['modelo'],'serial'=>$asig['numero_serial'],'estado'=>$asig['estado_activo'],'sede'=>$asig['sede'],'ubicacion'=>$asig['ubicacion'],'area_inventario'=>$asig['area_departamento'],'detalle_tecnico'=>$detalle,'ultimo_mantenimiento'=>$ultimo),'observaciones'=>$asig['observaciones'],'generada_por'=>$responsable,'fecha_snapshot'=>date('Y-m-d H:i:s'));
-   $num='ACT-ENT-'.date('Ymd').'-'.strtoupper(bin2hex(random_bytes(3)));
-   $ins=$dbh->prepare("INSERT INTO actas_asignaciones(asignacion_id,tipo_acta,numero_acta,version,estado_documental,datos_snapshot,generada_por) VALUES(?,'ENTREGA',?,1,'GENERADA',?,?)");$ins->execute(array($id,$num,json_encode($snapshot,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE),(int)$_SESSION['uid']));$actaId=(int)$dbh->lastInsertId();
-   $dbh->prepare("INSERT INTO auditoria(usuario_id,tabla_afectada,registro_id,accion,descripcion,direccion_ip) VALUES(?,'actas_asignaciones',?,'INSERT',?,?)")->execute(array((int)$_SESSION['uid'],$actaId,'Generación de acta de entrega '.$num.' para asignación '.$asig['numero_control'],$_SERVER['REMOTE_ADDR']??null));
-   header('Location: imprimir-acta-asignacion.php?id='.$actaId);exit;
+  if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!hash_equals($_SESSION['csrf_actas'], (string)($_POST['csrf_token'] ?? ''))) throw new RuntimeException('La sesión venció. Actualiza la página.');
+    $accion = (string)($_POST['accion'] ?? '');
+    $asig = obtenerAsignacion($dbh, $id);
+    if (!$asig) throw new RuntimeException('No se encontró la asignación.');
+    if ($asig['tipo_asignacion'] !== 'PERSONA') throw new RuntimeException('Las actas individuales están habilitadas para asignaciones tipo PERSONA.');
+    if ($accion === 'entrega') {
+      if (!in_array($asig['estado_asignacion'], array('PENDIENTE_FIRMA', 'ACTIVA'), true)) throw new RuntimeException('La asignación no está en un estado válido para generar el acta de entrega.');
+      $q = $dbh->prepare("SELECT COUNT(*) FROM actas_asignaciones WHERE asignacion_id=? AND tipo_acta='ENTREGA'");
+      $q->execute(array($id));
+      if ((int)$q->fetchColumn() > 0) throw new RuntimeException('Esta asignación ya tiene un acta de entrega. Para corregirla debe generarse una nueva versión mediante el procedimiento de corrección documental.');
+      $detalle = array();
+      $tabla = array(1 => 'equipos_computo', 2 => 'dispositivos_impresion', 3 => 'perifericos', 4 => 'telefonia', 5 => 'servidores', 6 => 'infraestructura');
+      $catId = (int)$dbh->query('SELECT categoria_id FROM activos WHERE id=' . (int)$asig['activo_id'])->fetchColumn();
+      if (isset($tabla[$catId])) {
+        $st = $dbh->prepare('SELECT * FROM `' . $tabla[$catId] . '` WHERE activo_id=? LIMIT 1');
+        $st->execute(array($asig['activo_id']));
+        $detalle = $st->fetch(PDO::FETCH_ASSOC) ?: array();
+        if ($catId === 5 && !empty($detalle['id'])) {
+          $d = $dbh->prepare('SELECT numero_disco,tipo_disco,capacidad,modelo,numero_serial,configuracion_raid,observaciones FROM servidor_discos WHERE servidor_id=? ORDER BY numero_disco');
+          $d->execute(array($detalle['id']));
+          $detalle['discos'] = $d->fetchAll(PDO::FETCH_ASSOC);
+        }
+      }
+      $m = $dbh->prepare("SELECT tipo_mantenimiento,COALESCE(fecha_finalizacion,fecha_inicio,fecha_programada) AS fecha,resultado,trabajo_realizado,observaciones FROM mantenimientos WHERE activo_id=? AND COALESCE(fecha_finalizacion,fecha_inicio,fecha_programada) IS NOT NULL ORDER BY COALESCE(fecha_finalizacion,fecha_inicio,fecha_programada) DESC,id DESC LIMIT 1");
+      $m->execute(array($asig['activo_id']));
+      $ultimo = $m->fetch(PDO::FETCH_ASSOC) ?: null;
+      $responsable = (string)($_SESSION['nombre_completo'] ?? 'Departamento de Sistemas');
+      $snapshot = array('tipo' => 'ENTREGA', 'numero_control' => $asig['numero_control'], 'fecha_asignacion' => $asig['fecha_asignacion'], 'funcionario_receptor' => $asig['funcionario_receptor'], 'area_departamento' => $asig['area_departamento_asignacion'], 'responsable_sistemas' => $responsable, 'activo' => array('codigo_inventario' => $asig['codigo_inventario'], 'placa' => $asig['codigo_placa'], 'categoria' => $asig['categoria'], 'descripcion' => $asig['descripcion'], 'marca' => $asig['marca'], 'modelo' => $asig['modelo'], 'serial' => $asig['numero_serial'], 'estado' => $asig['estado_activo'], 'sede' => $asig['sede'], 'ubicacion' => $asig['ubicacion'], 'area_inventario' => $asig['area_departamento'], 'detalle_tecnico' => $detalle, 'ultimo_mantenimiento' => $ultimo), 'observaciones' => $asig['observaciones'], 'generada_por' => $responsable, 'fecha_snapshot' => date('Y-m-d H:i:s'));
+      $num = 'ACT-ENT-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+      $ins = $dbh->prepare("INSERT INTO actas_asignaciones(asignacion_id,tipo_acta,numero_acta,version,estado_documental,datos_snapshot,generada_por) VALUES(?,'ENTREGA',?,1,'GENERADA',?,?)");
+      $ins->execute(array($id, $num, json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), (int)$_SESSION['uid']));
+      $actaId = (int)$dbh->lastInsertId();
+      $dbh->prepare("INSERT INTO auditoria(usuario_id,tabla_afectada,registro_id,accion,descripcion,direccion_ip) VALUES(?,'actas_asignaciones',?,'INSERT',?,?)")->execute(array((int)$_SESSION['uid'], $actaId, 'Generación de acta de entrega ' . $num . ' para asignación ' . $asig['numero_control'], $_SERVER['REMOTE_ADDR'] ?? null));
+      header('Location: imprimir-acta-asignacion.php?id=' . $actaId);
+      exit;
+    }
+    if ($accion === 'devolucion') {
+      if ($asig['estado_asignacion'] !== 'ACTIVA') throw new RuntimeException('La asignación ya está cerrada o anulada.');
+      $q = $dbh->prepare("SELECT id,estado_documental FROM actas_asignaciones WHERE asignacion_id=? AND tipo_acta='ENTREGA' ORDER BY id DESC LIMIT 1");
+      $q->execute(array($id));
+      $entrega = $q->fetch(PDO::FETCH_ASSOC);
+      if (!$entrega || $entrega['estado_documental'] !== 'FIRMADA') throw new RuntimeException('Para registrar la devolución primero debe existir un acta de entrega firmada y cargada.');
+      $estado = trim((string)($_POST['estado_fisico_devolucion'] ?? ''));
+      $obs = trim((string)($_POST['observaciones_devolucion'] ?? ''));
+      if ($estado === '') throw new RuntimeException('Indica el estado físico del activo al devolverlo.');
+      $det = $dbh->prepare("SELECT * FROM actas_asignaciones WHERE id=?");
+      $det->execute(array($entrega['id']));
+      $actaEntrega = $det->fetch(PDO::FETCH_ASSOC);
+      $snapshot = json_decode($actaEntrega['datos_snapshot'], true);
+      if (!is_array($snapshot)) $snapshot = array();
+      $snapshot['tipo'] = 'DEVOLUCION';
+      $snapshot['fecha_devolucion'] = date('Y-m-d');
+      $snapshot['estado_fisico_devolucion'] = $estado;
+      $snapshot['observaciones_devolucion'] = $obs;
+      $snapshot['responsable_recibe'] = (string)($_SESSION['nombre_completo'] ?? 'Departamento de Sistemas');
+      $snapshot['fecha_snapshot'] = date('Y-m-d H:i:s');
+      $num = 'ACT-DEV-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+      $dbh->beginTransaction();
+      $ins = $dbh->prepare("INSERT INTO actas_asignaciones(asignacion_id,tipo_acta,numero_acta,version,estado_documental,datos_snapshot,estado_fisico_devolucion,observaciones_devolucion,generada_por) VALUES(?,'DEVOLUCION',?,1,'GENERADA',?,?,?,?)");
+      $ins->execute(array($id, $num, json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), $estado, ($obs !== '' ? $obs : null), (int)$_SESSION['uid']));
+      $actaId = (int)$dbh->lastInsertId();
+      $dbh->prepare("INSERT INTO auditoria(usuario_id,tabla_afectada,registro_id,accion,descripcion,direccion_ip) VALUES(?,'actas_asignaciones',?,'INSERT',?,?)")->execute(array((int)$_SESSION['uid'], $actaId, 'Generación de acta de devolución ' . $num . ' para asignación ' . $asig['numero_control'] . '; pendiente de firma', $_SERVER['REMOTE_ADDR'] ?? null));
+      $dbh->commit();
+      header('Location: imprimir-acta-asignacion.php?id=' . $actaId);
+      exit;
+    }
+    if ($accion === 'subir_firmada') {
+      $actaId = (int)($_POST['acta_id'] ?? 0);
+      $q = $dbh->prepare('SELECT * FROM actas_asignaciones WHERE id=? AND asignacion_id=?');
+      $q->execute(array($actaId, $id));
+      $acta = $q->fetch(PDO::FETCH_ASSOC);
+      if (!$acta) throw new RuntimeException('Acta no encontrada.');
+      if ($acta['estado_documental'] === 'FIRMADA') throw new RuntimeException('Esta acta ya tiene un PDF firmado registrado. No se sobrescribe el documento original.');
+      if (empty($_FILES['pdf_firmado']) || $_FILES['pdf_firmado']['error'] !== UPLOAD_ERR_OK) throw new RuntimeException('Selecciona el PDF firmado.');
+      $f = $_FILES['pdf_firmado'];
+      if ($f['size'] < 1 || $f['size'] > 15 * 1024 * 1024) throw new RuntimeException('El PDF debe pesar máximo 15 MB.');
+      $fi = new finfo(FILEINFO_MIME_TYPE);
+      $mime = $fi->file($f['tmp_name']);
+      $head = file_get_contents($f['tmp_name'], false, null, 0, 5);
+      if ($mime !== 'application/pdf' || $head !== '%PDF-') throw new RuntimeException('El archivo seleccionado no es un PDF válido.');
+      $dir = __DIR__ . '/uploads/actas_asignaciones';
+      if (!is_dir($dir) && !mkdir($dir, 0750, true)) throw new RuntimeException('No fue posible crear el directorio documental.');
+      $name = 'acta_' . $actaId . '_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '.pdf';
+      $dest = $dir . '/' . $name;
+      if (!move_uploaded_file($f['tmp_name'], $dest)) throw new RuntimeException('No fue posible guardar el PDF firmado.');
+      $archivoSubido = $dest;
+      $relative = 'uploads/actas_asignaciones/' . $name;
+      $dbh->beginTransaction();
+      $up = $dbh->prepare("UPDATE actas_asignaciones SET estado_documental='FIRMADA',nombre_pdf_firmado=?,ruta_pdf_firmado=?,tipo_mime_firmado='application/pdf',tamano_pdf_firmado=?,firmada_por=?,fecha_carga_firmada=NOW() WHERE id=? AND estado_documental='GENERADA'");
+      $up->execute(array(basename($f['name']), $relative, (int)$f['size'], (int)$_SESSION['uid'], $actaId));
+      if ($up->rowCount() !== 1) throw new RuntimeException('No se pudo confirmar el registro del PDF firmado. Actualiza la página y verifica el estado del acta.');
+      if ($acta['tipo_acta'] === 'ENTREGA') {
+        $activar = $dbh->prepare("UPDATE asignaciones SET estado_asignacion='ACTIVA' WHERE id=? AND estado_asignacion='PENDIENTE_FIRMA'");
+        $activar->execute(array($id));
+        if ($activar->rowCount() !== 1) throw new RuntimeException('El PDF se registró, pero no fue posible activar la asignación pendiente. Verifica su estado antes de repetir la operación.');
+      }
+      if ($acta['tipo_acta'] === 'DEVOLUCION') {
+        $cerrar = $dbh->prepare("UPDATE asignaciones SET estado_asignacion='CERRADA',fecha_devolucion=CURDATE() WHERE id=? AND estado_asignacion='ACTIVA'");
+        $cerrar->execute(array($id));
+        if ($cerrar->rowCount() !== 1) throw new RuntimeException('No se pudo cerrar la asignación después de guardar el acta firmada. Contacta al administrador.');
+      }
+      $dbh->prepare("INSERT INTO auditoria(usuario_id,tabla_afectada,registro_id,accion,descripcion,direccion_ip) VALUES(?,'actas_asignaciones',?,'UPDATE',?,?)")->execute(array((int)$_SESSION['uid'], $actaId, 'PDF firmado guardado: ' . $name . ($acta['tipo_acta'] === 'DEVOLUCION' ? '; asignación cerrada tras firma de devolución' : ''), $_SERVER['REMOTE_ADDR'] ?? null));
+      $dbh->commit();
+      $archivoSubido = null;
+      header('Location: actas-asignacion.php?id=' . $id . '&guardada=1&tipo=' . urlencode($acta['tipo_acta']));
+      exit;
+    }
   }
-  if($accion==='devolucion'){
-   if($asig['estado_asignacion']!=='ACTIVA')throw new RuntimeException('La asignación ya está cerrada o anulada.');
-   $q=$dbh->prepare("SELECT id,estado_documental FROM actas_asignaciones WHERE asignacion_id=? AND tipo_acta='ENTREGA' ORDER BY id DESC LIMIT 1");$q->execute(array($id));$entrega=$q->fetch(PDO::FETCH_ASSOC);if(!$entrega||$entrega['estado_documental']!=='FIRMADA')throw new RuntimeException('Para registrar la devolución primero debe existir un acta de entrega firmada y cargada.');
-   $estado=trim((string)($_POST['estado_fisico_devolucion']??''));$obs=trim((string)($_POST['observaciones_devolucion']??''));if($estado==='')throw new RuntimeException('Indica el estado físico del activo al devolverlo.');
-   $det=$dbh->prepare("SELECT * FROM actas_asignaciones WHERE id=?");$det->execute(array($entrega['id']));$actaEntrega=$det->fetch(PDO::FETCH_ASSOC);$snapshot=json_decode($actaEntrega['datos_snapshot'],true);if(!is_array($snapshot))$snapshot=array();
-   $snapshot['tipo']='DEVOLUCION';$snapshot['fecha_devolucion']=date('Y-m-d');$snapshot['estado_fisico_devolucion']=$estado;$snapshot['observaciones_devolucion']=$obs;$snapshot['responsable_recibe']=(string)($_SESSION['nombre_completo']??'Departamento de Sistemas');$snapshot['fecha_snapshot']=date('Y-m-d H:i:s');
-   $num='ACT-DEV-'.date('Ymd').'-'.strtoupper(bin2hex(random_bytes(3)));
-   $dbh->beginTransaction();$ins=$dbh->prepare("INSERT INTO actas_asignaciones(asignacion_id,tipo_acta,numero_acta,version,estado_documental,datos_snapshot,estado_fisico_devolucion,observaciones_devolucion,generada_por) VALUES(?,'DEVOLUCION',?,1,'GENERADA',?,?,?,?)");$ins->execute(array($id,$num,json_encode($snapshot,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE),$estado,($obs!==''?$obs:null),(int)$_SESSION['uid']));$actaId=(int)$dbh->lastInsertId();$dbh->prepare("INSERT INTO auditoria(usuario_id,tabla_afectada,registro_id,accion,descripcion,direccion_ip) VALUES(?,'actas_asignaciones',?,'INSERT',?,?)")->execute(array((int)$_SESSION['uid'],$actaId,'Generación de acta de devolución '.$num.' para asignación '.$asig['numero_control'].'; pendiente de firma',$_SERVER['REMOTE_ADDR']??null));$dbh->commit();header('Location: imprimir-acta-asignacion.php?id='.$actaId);exit;
-  }
-  if($accion==='subir_firmada'){
-   $actaId=(int)($_POST['acta_id']??0);$q=$dbh->prepare('SELECT * FROM actas_asignaciones WHERE id=? AND asignacion_id=?');$q->execute(array($actaId,$id));$acta=$q->fetch(PDO::FETCH_ASSOC);if(!$acta)throw new RuntimeException('Acta no encontrada.');if($acta['estado_documental']==='FIRMADA')throw new RuntimeException('Esta acta ya tiene un PDF firmado registrado. No se sobrescribe el documento original.');
-   if(empty($_FILES['pdf_firmado'])||$_FILES['pdf_firmado']['error']!==UPLOAD_ERR_OK)throw new RuntimeException('Selecciona el PDF firmado.');$f=$_FILES['pdf_firmado'];if($f['size']<1||$f['size']>15*1024*1024)throw new RuntimeException('El PDF debe pesar máximo 15 MB.');$fi=new finfo(FILEINFO_MIME_TYPE);$mime=$fi->file($f['tmp_name']);$head=file_get_contents($f['tmp_name'],false,null,0,5);if($mime!=='application/pdf'||$head!=='%PDF-')throw new RuntimeException('El archivo seleccionado no es un PDF válido.');
-   $dir=__DIR__.'/uploads/actas_asignaciones';if(!is_dir($dir)&&!mkdir($dir,0750,true))throw new RuntimeException('No fue posible crear el directorio documental.');$name='acta_'.$actaId.'_'.date('YmdHis').'_'.bin2hex(random_bytes(4)).'.pdf';$dest=$dir.'/'.$name;if(!move_uploaded_file($f['tmp_name'],$dest))throw new RuntimeException('No fue posible guardar el PDF firmado.');$archivoSubido=$dest;$relative='uploads/actas_asignaciones/'.$name;
-    $dbh->beginTransaction();
-    $up=$dbh->prepare("UPDATE actas_asignaciones SET estado_documental='FIRMADA',nombre_pdf_firmado=?,ruta_pdf_firmado=?,tipo_mime_firmado='application/pdf',tamano_pdf_firmado=?,firmada_por=?,fecha_carga_firmada=NOW() WHERE id=? AND estado_documental='GENERADA'");$up->execute(array(basename($f['name']),$relative,(int)$f['size'],(int)$_SESSION['uid'],$actaId));if($up->rowCount()!==1)throw new RuntimeException('No se pudo confirmar el registro del PDF firmado. Actualiza la página y verifica el estado del acta.');
-    if($acta['tipo_acta']==='ENTREGA'){$activar=$dbh->prepare("UPDATE asignaciones SET estado_asignacion='ACTIVA' WHERE id=? AND estado_asignacion='PENDIENTE_FIRMA'");$activar->execute(array($id));if($activar->rowCount()!==1)throw new RuntimeException('El PDF se registró, pero no fue posible activar la asignación pendiente. Verifica su estado antes de repetir la operación.');}
-    if($acta['tipo_acta']==='DEVOLUCION'){$cerrar=$dbh->prepare("UPDATE asignaciones SET estado_asignacion='CERRADA',fecha_devolucion=CURDATE() WHERE id=? AND estado_asignacion='ACTIVA'");$cerrar->execute(array($id));if($cerrar->rowCount()!==1)throw new RuntimeException('No se pudo cerrar la asignación después de guardar el acta firmada. Contacta al administrador.');}
-    $dbh->prepare("INSERT INTO auditoria(usuario_id,tabla_afectada,registro_id,accion,descripcion,direccion_ip) VALUES(?,'actas_asignaciones',?,'UPDATE',?,?)")->execute(array((int)$_SESSION['uid'],$actaId,'PDF firmado guardado: '.$name.($acta['tipo_acta']==='DEVOLUCION'?'; asignación cerrada tras firma de devolución':''),$_SERVER['REMOTE_ADDR']??null));
-    $dbh->commit();$archivoSubido=null;header('Location: actas-asignacion.php?id='.$id.'&guardada=1&tipo='.urlencode($acta['tipo_acta']));exit;
-  }
- }
-} catch(Throwable $e){if($dbh->inTransaction())$dbh->rollBack();if($archivoSubido && is_file($archivoSubido))@unlink($archivoSubido);$error=$e instanceof PDOException?'No fue posible completar la operación. Verifica la estructura SQL y los registros relacionados.':$e->getMessage();error_log('Actas asignación: '.$e->getMessage());}
-$asig=obtenerAsignacion($dbh,$id);if(!$asig){http_response_code(404);exit('Asignación no encontrada.');}
-$q=$dbh->prepare("SELECT a.*,u.nombre_completo AS usuario_generacion,uf.nombre_completo AS usuario_firma FROM actas_asignaciones a LEFT JOIN usuarios_sistema u ON u.id=a.generada_por LEFT JOIN usuarios_sistema uf ON uf.id=a.firmada_por WHERE a.asignacion_id=? ORDER BY a.fecha_generacion,a.id");$q->execute(array($id));$actas=$q->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+  if ($dbh->inTransaction()) $dbh->rollBack();
+  if ($archivoSubido && is_file($archivoSubido)) @unlink($archivoSubido);
+  $error = $e instanceof PDOException ? 'No fue posible completar la operación. Verifica la estructura SQL y los registros relacionados.' : $e->getMessage();
+  error_log('Actas asignación: ' . $e->getMessage());
+}
+$asig = obtenerAsignacion($dbh, $id);
+if (!$asig) {
+  http_response_code(404);
+  exit('Asignación no encontrada.');
+}
+$q = $dbh->prepare("SELECT a.*,u.nombre_completo AS usuario_generacion,uf.nombre_completo AS usuario_firma FROM actas_asignaciones a LEFT JOIN usuarios_sistema u ON u.id=a.generada_por LEFT JOIN usuarios_sistema uf ON uf.id=a.firmada_por WHERE a.asignacion_id=? ORDER BY a.fecha_generacion,a.id");
+$q->execute(array($id));
+$actas = $q->fetchAll(PDO::FETCH_ASSOC);
 ?>
-<?php include __DIR__.'/includes/topbar.php'; ?>
-<div class="content-wrapper"><div class="content-container"><?php include __DIR__.'/includes/leftbar.php'; ?><div class="main-page"><div class="container-fluid"><div class="row page-title-div"><div class="col-md-12"><h2 class="title">Actas de asignación</h2></div></div><div class="row breadcrumb-div"><div class="col-md-12"><ul class="breadcrumb"><li><a href="dashboard.php">Inicio</a></li><li><a href="manage-asignacion.php">Asignaciones</a></li><li class="active">Actas</li></ul></div></div></div>
-<section class="section"><div class="container-fluid"><div class="panel"><div class="panel-heading"><h5>Asignación <?php echo h($asig['numero_control']); ?> — <?php echo h($asig['codigo_inventario']); ?></h5></div><div class="panel-body">
-<?php if($error):?><div class="alert alert-danger"><?php echo h($error);?></div><?php endif;?><?php if($ok):?><div class="alert alert-success"><?php echo h($ok);?></div><?php endif;?><?php if(isset($_GET['guardada'])):?><div class="alert alert-success"><strong>PDF firmado guardado correctamente.</strong> El documento quedó asociado al acta y registrado en el historial.<?php if(($_GET['tipo']??'')==='ENTREGA'):?> Ya puedes iniciar el proceso de devolución.<?php else:?> La devolución quedó firmada y la asignación se cerró correctamente.<?php endif;?></div><?php endif;?><?php if(isset($_GET['registrada'])):?><div class="alert alert-success"><strong>Asignación registrada.</strong> Ahora puedes generar e imprimir el acta de entrega.</div><?php endif;?>
-<p><strong>Funcionario:</strong> <?php echo h($asig['funcionario_receptor']);?> | <strong>Área:</strong> <?php echo h($asig['area_departamento_asignacion']);?> | <strong>Estado:</strong> <?php echo h($asig['estado_asignacion']);?></p>
-<?php if(in_array($asig['estado_asignacion'],array('PENDIENTE_FIRMA','ACTIVA'),true) && $asig['tipo_asignacion']==='PERSONA' && !$actas):?><form method="post" style="margin:15px 0"><input type="hidden" name="csrf_token" value="<?php echo h($_SESSION['csrf_actas']);?>"><input type="hidden" name="asignacion_id" value="<?php echo $id;?>"><input type="hidden" name="accion" value="entrega"><button class="btn btn-primary btn-lg" type="submit"><i class="fa fa-print"></i> Generar e imprimir acta de entrega</button><p class="help-block">Al pulsar este botón se abrirá el documento listo para imprimir y firmar físicamente. Después debes regresar a esta pantalla para cargar el PDF firmado.</p></form><?php endif;?>
-<?php if($asig['estado_asignacion']==='ACTIVA' && $asig['tipo_asignacion']==='PERSONA'):?><?php $entregaFirmada=false;$devolucionExiste=false;$devolucionFirmada=false;foreach($actas as $aa){if($aa['tipo_acta']==='ENTREGA'&&$aa['estado_documental']==='FIRMADA')$entregaFirmada=true;if($aa['tipo_acta']==='DEVOLUCION'){$devolucionExiste=true;if($aa['estado_documental']==='FIRMADA')$devolucionFirmada=true;}}?><div class="panel panel-default"><div class="panel-body"><h4>Registrar devolución</h4><?php if(!$entregaFirmada):?><p class="text-muted">La devolución estará habilitada cuando el acta de entrega esté firmada y guardada.</p><?php elseif($devolucionExiste):?><div class="alert alert-info">El acta de devolución ya fue generada. Debes cargar y guardar su PDF firmado para cerrar la asignación.</div><?php else:?><p class="text-muted">El acta de entrega está firmada. Puedes registrar el estado físico del equipo y generar el acta de devolución.</p><form method="post"><input type="hidden" name="csrf_token" value="<?php echo h($_SESSION['csrf_actas']);?>"><input type="hidden" name="asignacion_id" value="<?php echo $id;?>"><input type="hidden" name="accion" value="devolucion"><div class="form-group"><label>Estado físico del activo al devolver *</label><select class="form-control" name="estado_fisico_devolucion" required><option value="">Seleccione</option><option>Buen estado</option><option>Buen estado con observaciones</option><option>Daño o deterioro</option><option>Incompleto / accesorios faltantes</option><option>No funcional</option></select></div><div class="form-group"><label>Observaciones de devolución</label><textarea class="form-control" name="observaciones_devolucion" rows="3"></textarea></div><button class="btn btn-warning" type="submit">Generar acta de devolución</button></form><?php endif;?></div></div><?php endif;?>
-<h4>Historial documental</h4><div class="table-responsive"><table class="table table-bordered table-striped"><thead><tr><th>Número</th><th>Tipo</th><th>Estado</th><th>Generación</th><th>Generó</th><th>Carga firmada</th><th>Acciones</th></tr></thead><tbody>
-<?php foreach($actas as $a):?><tr><td><?php echo h($a['numero_acta']);?></td><td><?php echo h($a['tipo_acta']);?></td><td><?php echo h($a['estado_documental']);?></td><td><?php echo h($a['fecha_generacion']);?></td><td><?php echo h($a['usuario_generacion']);?></td><td><?php echo h($a['fecha_carga_firmada']?:'Pendiente');?></td><td><a class="btn btn-xs btn-primary" target="_blank" href="imprimir-acta-asignacion.php?id=<?php echo (int)$a['id'];?>"><i class="fa fa-print"></i> Ver / imprimir acta</a><?php if($a['estado_documental']==='GENERADA'):?><form method="post" enctype="multipart/form-data" style="margin-top:10px;min-width:190px"><input type="hidden" name="csrf_token" value="<?php echo h($_SESSION['csrf_actas']);?>"><input type="hidden" name="asignacion_id" value="<?php echo $id;?>"><input type="hidden" name="accion" value="subir_firmada"><input type="hidden" name="acta_id" value="<?php echo (int)$a['id'];?>"><div class="form-group" style="margin-bottom:6px"><input class="form-control" type="file" name="pdf_firmado" accept="application/pdf,.pdf" required></div><button class="btn btn-success btn-sm btn-block" type="submit"><i class="fa fa-save"></i> Guardar PDF firmado</button><small class="help-block">Selecciona el PDF escaneado y pulsa Guardar para confirmar su almacenamiento.</small></form><?php else:?><a class="btn btn-xs btn-success" target="_blank" href="descargar-acta-firmada.php?id=<?php echo (int)$a['id'];?>">Abrir PDF firmado</a><?php endif;?></td></tr><?php endforeach;?><?php if(!$actas):?><tr><td colspan="7" class="text-center">Todavía no se han generado actas.</td></tr><?php endif;?></tbody></table></div><a href="manage-asignacion.php" class="btn btn-default">Volver a asignaciones</a>
-</div></div></div></section></div></div></div>
-<?php include __DIR__.'/includes/footer.php'; ?>
+<?php include __DIR__ . '/includes/topbar.php'; ?>
+<div class="content-wrapper">
+  <div class="content-container"><?php include __DIR__ . '/includes/leftbar.php'; ?><div class="main-page">
+      <div class="container-fluid">
+        <div class="row page-title-div">
+          <div class="col-md-12">
+            <h2 class="title">Actas de asignación</h2>
+          </div>
+        </div>
+        <div class="row breadcrumb-div">
+          <div class="col-md-12">
+            <ul class="breadcrumb">
+              <li><a href="dashboard.php">Inicio</a></li>
+              <li><a href="manage-asignacion.php">Asignaciones</a></li>
+              <li class="active">Actas</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <section class="section">
+        <div class="container-fluid">
+          <div class="panel">
+            <div class="panel-heading">
+              <h5>Asignación <?php echo h($asig['numero_control']); ?> — <?php echo h($asig['codigo_inventario']); ?></h5>
+            </div>
+            <div class="panel-body">
+              <?php if ($error): ?><div class="alert alert-danger"><?php echo h($error); ?></div><?php endif; ?><?php if ($ok): ?><div class="alert alert-success"><?php echo h($ok); ?></div><?php endif; ?><?php if (isset($_GET['guardada'])): ?><div class="alert alert-success"><strong>PDF firmado guardado correctamente.</strong> El documento quedó asociado al acta y registrado en el historial.<?php if (($_GET['tipo'] ?? '') === 'ENTREGA'): ?> Ya puedes iniciar el proceso de devolución.<?php else: ?> La devolución quedó firmada y la asignación se cerró correctamente.<?php endif; ?></div><?php endif; ?><?php if (isset($_GET['registrada'])): ?><div class="alert alert-success"><strong>Asignación registrada.</strong> Ahora puedes generar e imprimir el acta de entrega.</div><?php endif; ?>
+              <p><strong>Funcionario:</strong> <?php echo h($asig['funcionario_receptor']); ?> | <strong>Área:</strong> <?php echo h($asig['area_departamento_asignacion']); ?> | <strong>Estado:</strong> <?php echo h($asig['estado_asignacion']); ?></p>
+              <?php if (in_array($asig['estado_asignacion'], array('PENDIENTE_FIRMA', 'ACTIVA'), true) && $asig['tipo_asignacion'] === 'PERSONA' && !$actas): ?><form method="post" style="margin:15px 0"><input type="hidden" name="csrf_token" value="<?php echo h($_SESSION['csrf_actas']); ?>"><input type="hidden" name="asignacion_id" value="<?php echo $id; ?>"><input type="hidden" name="accion" value="entrega"><button class="btn btn-primary btn-lg" type="submit"><i class="fa fa-print"></i> Generar e imprimir acta de entrega</button>
+                  <p class="help-block">Al pulsar este botón se abrirá el documento listo para imprimir y firmar físicamente. Después debes regresar a esta pantalla para cargar el PDF firmado.</p>
+                </form><?php endif; ?>
+              <?php if ($asig['estado_asignacion'] === 'ACTIVA' && $asig['tipo_asignacion'] === 'PERSONA'): ?><?php $entregaFirmada = false;
+                                                                                                        $devolucionExiste = false;
+                                                                                                        $devolucionFirmada = false;
+                                                                                                        foreach ($actas as $aa) {
+                                                                                                          if ($aa['tipo_acta'] === 'ENTREGA' && $aa['estado_documental'] === 'FIRMADA') $entregaFirmada = true;
+                                                                                                          if ($aa['tipo_acta'] === 'DEVOLUCION') {
+                                                                                                            $devolucionExiste = true;
+                                                                                                            if ($aa['estado_documental'] === 'FIRMADA') $devolucionFirmada = true;
+                                                                                                          }
+                                                                                                        } ?><div class="panel panel-default">
+                <div class="panel-body">
+                  <h4>Registrar devolución</h4><?php if (!$entregaFirmada): ?><p class="text-muted">La devolución estará habilitada cuando el acta de entrega esté firmada y guardada.</p><?php elseif ($devolucionExiste): ?><div class="alert alert-info">El acta de devolución ya fue generada. Debes cargar y guardar su PDF firmado para cerrar la asignación.</div><?php else: ?><p class="text-muted">El acta de entrega está firmada. Puedes registrar el estado físico del equipo y generar el acta de devolución.</p>
+                    <form method="post"><input type="hidden" name="csrf_token" value="<?php echo h($_SESSION['csrf_actas']); ?>"><input type="hidden" name="asignacion_id" value="<?php echo $id; ?>"><input type="hidden" name="accion" value="devolucion">
+                      <div class="form-group"><label>Estado físico del activo al devolver *</label><select class="form-control" name="estado_fisico_devolucion" required>
+                          <option value="">Seleccione</option>
+                          <option>Buen estado</option>
+                          <option>Buen estado con observaciones</option>
+                          <option>Daño o deterioro</option>
+                          <option>Incompleto / accesorios faltantes</option>
+                          <option>No funcional</option>
+                        </select></div>
+                      <div class="form-group"><label>Observaciones de devolución</label><textarea class="form-control" name="observaciones_devolucion" rows="3"></textarea></div><button class="btn btn-warning" type="submit">Generar acta de devolución</button>
+                    </form><?php endif; ?>
+                </div>
+              </div><?php endif; ?>
+            <h4>Historial documental</h4>
+            <div class="table-responsive">
+              <table class="table table-bordered table-striped">
+                <thead>
+                  <tr>
+                    <th>Número</th>
+                    <th>Tipo</th>
+                    <th>Estado</th>
+                    <th>Generación</th>
+                    <th>Generó</th>
+                    <th>Carga firmada</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($actas as $a): ?><tr>
+                      <td><?php echo h($a['numero_acta']); ?></td>
+                      <td><?php echo h($a['tipo_acta']); ?></td>
+                      <td><?php echo h($a['estado_documental']); ?></td>
+                      <td><?php echo h($a['fecha_generacion']); ?></td>
+                      <td><?php echo h($a['usuario_generacion']); ?></td>
+                      <td><?php echo h($a['fecha_carga_firmada'] ?: 'Pendiente'); ?></td>
+                      <td><a class="btn btn-xs btn-primary" target="_blank" href="imprimir-acta-asignacion.php?id=<?php echo (int)$a['id']; ?>"><i class="fa fa-print"></i> Ver / imprimir acta</a><?php if ($a['estado_documental'] === 'GENERADA'): ?><form method="post" enctype="multipart/form-data" style="margin-top:10px;min-width:190px"><input type="hidden" name="csrf_token" value="<?php echo h($_SESSION['csrf_actas']); ?>"><input type="hidden" name="asignacion_id" value="<?php echo $id; ?>"><input type="hidden" name="accion" value="subir_firmada"><input type="hidden" name="acta_id" value="<?php echo (int)$a['id']; ?>">
+                            <div class="form-group" style="margin-bottom:6px"><input class="form-control" type="file" name="pdf_firmado" accept="application/pdf,.pdf" required></div><button class="btn btn-success btn-sm btn-block" type="submit"><i class="fa fa-save"></i> Guardar PDF firmado</button><small class="help-block">Selecciona el PDF escaneado y pulsa Guardar para confirmar su almacenamiento.</small>
+                          </form><?php else: ?><a class="btn btn-xs btn-success" target="_blank" href="descargar-acta-firmada.php?id=<?php echo (int)$a['id']; ?>">Abrir PDF firmado</a><?php endif; ?></td>
+                    </tr><?php endforeach; ?><?php if (!$actas): ?><tr>
+                      <td colspan="7" class="text-center">Todavía no se han generado actas.</td>
+                    </tr><?php endif; ?></tbody>
+              </table>
+            </div><a href="manage-asignacion.php" class="btn btn-default">Volver a asignaciones</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<?php include __DIR__ . '/includes/footer.php'; ?>
