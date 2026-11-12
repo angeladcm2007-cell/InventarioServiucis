@@ -122,7 +122,7 @@ function renderValue($v)
 </head>
 
 <body>
-    <<style>
+    <style>
         /* Contenedor de la botonera */
         .actas-acciones-header {
         display: flex;
