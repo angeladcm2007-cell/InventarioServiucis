@@ -84,6 +84,19 @@
                     </ul>
                 </li>
 
+                <!-- Gestión de traslados físicos -->
+                <li class="has-children">
+                    <a href="#">
+                        <i class="fa fa-exchange"></i>
+                        <span>Gestión de Traslados</span>
+                        <i class="fa fa-angle-right arrow"></i>
+                    </a>
+                    <ul class="child-nav">
+                        <li><a href="registrar-traslado.php"><i class="fa fa-plus"></i><span>Registrar Traslado</span></a></li>
+                        <li><a href="manage-traslados.php"><i class="fa fa-history"></i><span>Historial de Traslados</span></a></li>
+                    </ul>
+                </li>
+
                 <!-- Gestión de asignaciones -->
                 <li class="has-children">
                     <a href="#">
