@@ -189,7 +189,11 @@ $(function($) {
 }
 
 function show(id, value) {
-    document.getElementById(id).style.display = value ? 'block' : 'none';
+    var elemento = document.getElementById(id);
+
+    if (elemento) {
+        elemento.style.display = value ? 'block' : 'none';
+    }
 }
 
 onReady(function () {
@@ -197,35 +201,34 @@ onReady(function () {
     show('loading', false);
 });
 });
-$('#slider').owlCarousel({
-    loop:true,
-    margin:10,
-    dots:true,
-    responsive:{
-        0:{
-            items:1
-        },
-        600:{
-            items:1
-        },
-        1000:{
-            items:1
-        }
+$(document).ready(function () {
+
+    // Inicializar slider si existe el complemento y el elemento
+    if ($.fn.owlCarousel && $('#slider').length) {
+        $('#slider').owlCarousel({
+            loop: true,
+            margin: 10,
+            dots: true,
+            responsive: {
+                0: { items: 1 },
+                600: { items: 1 },
+                1000: { items: 1 }
+            }
+        });
     }
-});
-$('#customer').owlCarousel({
-    loop:true,
-    margin:30,
-    dots:false,
-    responsive:{
-        0:{
-            items:1
-        },
-        600:{
-            items:3
-        },
-        1000:{
-            items:5
-        }
+
+    // Inicializar customer si existe el complemento y el elemento
+    if ($.fn.owlCarousel && $('#customer').length) {
+        $('#customer').owlCarousel({
+            loop: true,
+            margin: 30,
+            dots: false,
+            responsive: {
+                0: { items: 1 },
+                600: { items: 3 },
+                1000: { items: 5 }
+            }
+        });
     }
+
 });
