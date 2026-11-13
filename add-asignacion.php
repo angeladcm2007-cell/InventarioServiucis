@@ -313,12 +313,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_asignacion'])
 
                             mostrarActivo(a);
 
-                            resultados.querySelectorAll('.resultado-activo')
-                                .forEach(function(b) {
-                                    b.classList.remove('activo-seleccionado');
-                                });
-
-                            boton.classList.add('activo-seleccionado');
+                            // Mostrar el activo elegido y cerrar la lista de resultados.
+                            buscar.value = (a.codigo_inventario || 'Activo seleccionado') +
+                                ' | ' + (a.descripcion || 'Sin descripción');
+                            resultados.style.display = 'none';
+                            resultados.innerHTML = '';
+                            estado.textContent = 'Activo seleccionado correctamente: ' +
+                                (a.codigo_inventario || 'Sin código') +
+                                '. Puedes continuar con el registro de la asignación.';
                         });
 
                         resultados.appendChild(boton);

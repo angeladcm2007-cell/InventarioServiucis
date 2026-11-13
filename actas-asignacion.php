@@ -227,9 +227,26 @@ $actas = $q->fetchAll(PDO::FETCH_ASSOC);
                       <td><?php echo h($a['fecha_generacion']); ?></td>
                       <td><?php echo h($a['usuario_generacion']); ?></td>
                       <td><?php echo h($a['fecha_carga_firmada'] ?: 'Pendiente'); ?></td>
-                      <td><a class="btn btn-xs btn-primary" target="_blank" href="imprimir-acta-asignacion.php?id=<?php echo (int)$a['id']; ?>"><i class="fa fa-print"></i> Ver / imprimir acta</a><?php if ($a['estado_documental'] === 'GENERADA'): ?><form method="post" enctype="multipart/form-data" style="margin-top:10px;min-width:190px"><input type="hidden" name="csrf_token" value="<?php echo h($_SESSION['csrf_actas']); ?>"><input type="hidden" name="asignacion_id" value="<?php echo $id; ?>"><input type="hidden" name="accion" value="subir_firmada"><input type="hidden" name="acta_id" value="<?php echo (int)$a['id']; ?>">
-                            <div class="form-group" style="margin-bottom:6px"><input class="form-control" type="file" name="pdf_firmado" accept="application/pdf,.pdf" required></div><button class="btn btn-success btn-sm btn-block" type="submit"><i class="fa fa-save"></i> Guardar PDF firmado</button><small class="help-block">Selecciona el PDF escaneado y pulsa Guardar para confirmar su almacenamiento.</small>
-                          </form><?php else: ?><a class="btn btn-xs btn-success" target="_blank" href="descargar-acta-firmada.php?id=<?php echo (int)$a['id']; ?>">Abrir PDF firmado</a><?php endif; ?></td>
+                      <td>
+                        <div class="acciones-acta" style="display:flex; flex-direction:column; align-items:flex-start; gap:10px;">
+                          <a class="btn btn-xs btn-primary" target="_blank" href="imprimir-acta-asignacion.php?id=<?php echo (int)$a['id']; ?>"><i class="fa fa-print"></i> Ver / imprimir acta</a>
+                          <?php if ($a['estado_documental'] === 'GENERADA'): ?>
+                            <form method="post" enctype="multipart/form-data" style="margin:0;min-width:190px">
+                              <input type="hidden" name="csrf_token" value="<?php echo h($_SESSION['csrf_actas']); ?>">
+                              <input type="hidden" name="asignacion_id" value="<?php echo $id; ?>">
+                              <input type="hidden" name="accion" value="subir_firmada">
+                              <input type="hidden" name="acta_id" value="<?php echo (int)$a['id']; ?>">
+                              <div class="form-group" style="margin-bottom:6px">
+                                <input class="form-control" type="file" name="pdf_firmado" accept="application/pdf,.pdf" required>
+                              </div>
+                              <button class="btn btn-success btn-sm btn-block" type="submit"><i class="fa fa-save"></i> Guardar PDF firmado</button>
+                              <small class="help-block">Selecciona el PDF escaneado y pulsa Guardar para confirmar su almacenamiento.</small>
+                            </form>
+                          <?php else: ?>
+                            <a class="btn btn-xs btn-success" target="_blank" href="descargar-acta-firmada.php?id=<?php echo (int)$a['id']; ?>">Abrir PDF firmado</a>
+                          <?php endif; ?>
+                        </div>
+                      </td>
                     </tr><?php endforeach; ?><?php if (!$actas): ?><tr>
                       <td colspan="7" class="text-center">Todavía no se han generado actas.</td>
                     </tr><?php endif; ?></tbody>
