@@ -24,6 +24,9 @@ if (!is_array($d)) $d = array();
 $activo = $d['activo'] ?? array();
 $detalle = $activo['detalle_tecnico'] ?? array();
 $last = $activo['ultimo_mantenimiento'] ?? null;
+$tipoAsignacion = $d['tipo_asignacion'] ?? 'PERSONA';
+$areasUsuarias = is_array($d['areas_usuarias'] ?? null) ? $d['areas_usuarias'] : array();
+$receptorActa = $tipoAsignacion === 'SEDE' ? 'Responsable de sede / área usuaria' : ($d['funcionario_receptor'] ?? 'Funcionario receptor');
 function renderValue($v)
 {
     if (is_array($v)) return '';
@@ -239,13 +242,17 @@ function renderValue($v)
         <div class="section">3. Información de entrega / devolución</div>
         <table>
             <tr>
-                <th>Funcionario receptor</th>
-                <td><?php echo h($d['funcionario_receptor'] ?? ''); ?></td>
+                <th>Modalidad de asignación</th>
+                <td><?php echo $tipoAsignacion === 'SEDE' ? 'Uso compartido en sede' : 'Entrega individual a persona'; ?></td>
             </tr>
-            <tr>
-                <th>Área o departamento</th>
-                <td><?php echo h($d['area_departamento'] ?? ''); ?></td>
-            </tr>
+            <?php if ($tipoAsignacion === 'PERSONA'): ?>
+            <tr><th>Funcionario receptor</th><td><?php echo h($d['funcionario_receptor'] ?? ''); ?></td></tr>
+            <tr><th>Área o departamento</th><td><?php echo h($d['area_departamento'] ?? ''); ?></td></tr>
+            <?php else: ?>
+            <tr><th>Sede</th><td><?php echo h($d['sede'] ?? $activo['sede'] ?? ''); ?></td></tr>
+            <tr><th>Ubicación física principal</th><td><?php echo h($d['ubicacion'] ?? $activo['ubicacion'] ?? ''); ?></td></tr>
+            <tr><th>Oficinas / áreas usuarias</th><td><?php if ($areasUsuarias): ?><ul><?php foreach ($areasUsuarias as $area): ?><li><?php echo h($area['ubicacion_espacio'] ?? ''); ?><?php if (!empty($area['area_departamento'])): ?> — <?php echo h($area['area_departamento']); ?><?php endif; ?></li><?php endforeach; ?></ul><?php else: ?>No se registraron áreas adicionales de uso compartido.<?php endif; ?></td></tr>
+            <?php endif; ?>
             <tr>
                 <th>Responsable de Sistemas</th>
                 <td><?php echo h($d['responsable_sistemas'] ?? $d['responsable_recibe'] ?? ''); ?></td>
@@ -295,7 +302,7 @@ function renderValue($v)
         </table>
         <p>Mediante la firma de este documento, las personas intervinientes dejan constancia de la entrega o devolución del activo descrito y de las condiciones aquí registradas.</p>
         <div class="signatures">
-            <div class="sign"><b><?php echo h($d['funcionario_receptor'] ?? 'Funcionario receptor'); ?></b><br>Recibe / entrega el activo<br>Identificación: __________________</div>
+            <div class="sign"><b><?php echo h($receptorActa); ?></b><br><?php echo $tipoAsignacion === 'SEDE' ? 'Recibe / entrega en representación de la sede' : 'Recibe / entrega el activo'; ?><br>Identificación: __________________</div>
             <div class="sign"><b><?php echo h($d['responsable_sistemas'] ?? $d['responsable_recibe'] ?? 'Responsable de Sistemas'); ?></b><br>Departamento de Sistemas<br>Identificación: __________________</div>
         </div>
         <p style="margin-top:35px;font-size:10px">Documento generado por el sistema de inventario tecnológico SERVIUCIS. La copia firmada debe cargarse al expediente digital de la asignación.</p>

@@ -67,21 +67,23 @@ try {
     .main-page .dashboard-summary-row {
         display: flex;
         flex-wrap: wrap;
+        justify-content: center;
         margin-left: -8px;
         margin-right: -8px;
         margin-bottom: 38px !important;
     }
     .main-page .dashboard-summary-row > [class*="col-"] {
         float: none;
-        width: 20%;
-        flex: 0 0 20%;
-        max-width: 20%;
+        width: 25%;
+        flex: 0 0 25%;
+        max-width: 25%;
         padding-left: 8px;
         padding-right: 8px;
         margin-bottom: 15px;
     }
     .dashboard-stat {
         min-height: 125px;
+        text-align: center;
         border-radius: 10px;
         border: 1px solid #e7edf0;
         box-shadow: 0 3px 12px rgba(15, 55, 65, .07);
@@ -185,35 +187,28 @@ try {
                 <div class="container-fluid">
                     <div class="row dashboard-summary-row">
                         <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
-                            <div class="dashboard-stat bg-white">
+                            <div class="dashboard-stat bg-white" style="height: 196px;">
                                 <span class="bg-icon"><i class="fa fa-laptop"></i></span>
                                 <span class="number counter"><?php echo h($totalActivos); ?></span>
                                 <span class="name">Activos registrados</span>
                             </div>
                         </div>
                         <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
-                            <div class="dashboard-stat bg-white">
+                            <div class="dashboard-stat bg-white" style="height: 196px;">
                                 <span class="bg-icon"><i class="fa fa-share"></i></span>
                                 <span class="number counter"><?php echo h($asignacionesActivas); ?></span>
                                 <span class="name">Asignaciones activas</span>
                             </div>
                         </div>
                         <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
-                            <div class="dashboard-stat bg-white">
-                                <span class="bg-icon"><i class="fa fa-address-book"></i></span>
-                                <span class="number counter"><?php echo h($totalPersonas); ?></span>
-                                <span class="name">Personas activas (catálogo)</span>
-                            </div>
-                        </div>
-                        <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
-                            <div class="dashboard-stat bg-white">
+                            <div class="dashboard-stat bg-white" style="height: 190px;">
                                 <span class="bg-icon"><i class="fa fa-user"></i></span>
                                 <span class="number counter"><?php echo h($usuariosActivos); ?></span>
                                 <span class="name">Usuarios activos del sistema</span>
                             </div>
                         </div>
                         <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
-                            <div class="dashboard-stat bg-white">
+                            <div class="dashboard-stat bg-white" style="height: 190px;">
                                 <span class="bg-icon"><i class="fa fa-wrench"></i></span>
                                 <span class="number counter"><?php echo h($mantenimientosPendientes); ?></span>
                                 <span class="name">Mantenimientos pendientes</span>

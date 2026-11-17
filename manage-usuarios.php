@@ -99,6 +99,7 @@ include __DIR__ . '/includes/topbar.php';
                         <h2 class="title">Gestión de usuarios del sistema</h2>
                         <p>Administra las cuentas, perfiles y estados de acceso a SISAT.</p>
                     </div>
+                    <br>
                     <div class="col-sm-4 text-right" style="padding-top: 8px;">
                         <a class="btn btn-primary" href="create-usuario.php"><i class="fa fa-user-plus"></i> Registrar usuario</a>
                     </div>
