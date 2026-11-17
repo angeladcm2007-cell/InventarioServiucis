@@ -1,5 +1,7 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/auth.php'; sisatRequireRoles([1,2,3]);
+
+if (session_status() !== PHP_SESSION_ACTIVE) { session_start(); }
 require_once __DIR__ . '/includes/config.php';
 if (empty($_SESSION['alogin']) || empty($_SESSION['uid'])) { header('Location: index.php'); exit; }
 function h($v) { return htmlspecialchars((string)($v ?? ''), ENT_QUOTES, 'UTF-8'); }
@@ -65,7 +67,7 @@ $campos=array(
 <div class="row page-title-div"><div class="col-md-12"><h2 class="title">Ficha del activo</h2></div></div>
 <div class="row breadcrumb-div"><div class="col-md-12"><ul class="breadcrumb"><li><a href="dashboard.php">Inicio</a></li><li><a href="manage-activos.php">Ver activos</a></li><li class="active">Ficha del activo</li></ul></div></div></div>
 <section class="section"><div class="container-fluid"><div class="panel"><div class="panel-heading"><div class="panel-title"><h5><?php echo h($a['codigo_inventario']); ?> — <?php echo h($a['categoria']); ?></h5></div></div><div class="panel-body">
-<div class="clearfix" style="margin-bottom:20px"><a class="btn btn-primary pull-right" href="edit-activo.php?id=<?php echo $id; ?>"><i class="fa fa-pencil"></i> Editar información</a><a class="btn btn-default" href="manage-activos.php"><i class="fa fa-arrow-left"></i> Volver al listado</a></div>
+<div class="clearfix" style="margin-bottom:20px"><?php if (sisatCanWrite()): ?><a class="btn btn-primary pull-right" href="edit-activo.php?id=<?php echo $id; ?>"><i class="fa fa-pencil"></i> Editar información</a><?php endif; ?><a class="btn btn-default" href="manage-activos.php"><i class="fa fa-arrow-left"></i> Volver al listado</a></div>
 <h4>Identificación y datos generales</h4><div class="table-responsive"><table class="table table-bordered"><tbody>
 <?php $generales=array('Código de inventario'=>$a['codigo_inventario'],'Número de placa'=>$a['codigo_placa'],'Categoría'=>$a['categoria'],'Descripción'=>$a['descripcion'],'Marca'=>$a['marca'],'Modelo'=>$a['modelo'],'Número de serial'=>$a['numero_serial'],'Estado'=>$estados[$a['estado']]??$a['estado'],'Fecha de adquisición'=>$a['fecha_adquisicion'],'Valor de adquisición'=>$a['valor_adquisicion'],'¿Reparada?'=>($a['reparada']==='SI'?'Sí':'No'),'Costo de reparación'=>$a['costo_reparacion'],'Fecha de reparación'=>$a['fecha_reparacion'],'Fecha de mantenimiento'=>$a['fecha_mantenimiento'],'Descripción / causa de reparación o trabajo realizado'=>$a['descripcion_reparacion'],'Sede'=>$a['sede'],'Ubicación'=>$a['ubicacion'],'Tipo de ubicación'=>$a['tipo_ubicacion'],'Piso'=>$a['piso'],'Área / departamento'=>$a['area_departamento'],'Detalle de ubicación'=>$a['detalle_ubicacion'],'Observaciones'=>$a['observaciones'],'Fecha de registro'=>$a['fecha_creacion']); foreach($generales as $k=>$v): ?><tr><th style="width:28%"><?php echo h($k); ?></th><td><?php echo h(($v!==null && $v!=='')?$v:'—'); ?></td></tr><?php endforeach; ?>
 </tbody></table></div>

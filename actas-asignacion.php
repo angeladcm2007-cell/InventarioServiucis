@@ -1,5 +1,7 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/auth.php'; sisatRequireRoles([1, 2]);
+
+if (session_status() !== PHP_SESSION_ACTIVE) { session_start(); }
 require_once __DIR__ . '/includes/config.php';
 if (empty($_SESSION['alogin']) || empty($_SESSION['uid'])) {
   header('Location: index.php');

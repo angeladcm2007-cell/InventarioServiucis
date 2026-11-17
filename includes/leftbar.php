@@ -1,3 +1,4 @@
+<?php require_once __DIR__ . '/auth.php'; sisatRequireLogin(); $rolActual = sisatRoleId(); ?>
 <div class="left-sidebar box-shadow" style="
     background-color: #0c4d58ff;
     padding-top: 30px;
@@ -34,91 +35,54 @@
                     <span>MENU DEL SISTEMA</span>
                 </li>
 
-                <!-- Gestión de usuarios -->
+                <?php if ($rolActual === 1): ?>
                 <li class="has-children">
-                    <a href="#">
-                        <i class="fa fa-file-text"></i>
-                        <span>Gestión de Usuarios</span>
-                        <i class="fa fa-angle-right arrow"></i>
-                    </a>
-
+                    <a href="#"><i class="fa fa-users"></i><span>Gestión de Usuarios</span><i class="fa fa-angle-right arrow"></i></a>
                     <ul class="child-nav">
-                        <li>
-                            <a href="create-usuario.php">
-                                <i class="fa fa-plus"></i>
-                                <span>Registrar Usuarios</span>
-                            </a>
-                        </li>
-
-                        <li>
-                            <a href="manage-usuarios.php">
-                                <i class="fa fa-bars"></i>
-                                <span>Ver Usuarios</span>
-                            </a>
-                        </li>
+                        <li><a href="create-usuario.php"><i class="fa fa-plus"></i><span>Registrar Usuarios</span></a></li>
+                        <li><a href="manage-usuarios.php"><i class="fa fa-bars"></i><span>Ver Usuarios</span></a></li>
                     </ul>
                 </li>
+                <?php endif; ?>
 
-                <!-- Gestión de activos -->
+                <?php if (in_array($rolActual, [1,2], true)): ?>
                 <li class="has-children">
-                    <a href="#">
-                        <i class="fa fa-file-text"></i>
-                        <span>Gestión de Activos</span>
-                        <i class="fa fa-angle-right arrow"></i>
-                    </a>
-
+                    <a href="#"><i class="fa fa-laptop"></i><span>Gestión de Activos</span><i class="fa fa-angle-right arrow"></i></a>
                     <ul class="child-nav">
-                        <li>
-                            <a href="create-activo.php">
-                                <i class="fa fa-plus"></i>
-                                <span>Registrar Activo</span>
-                            </a>
-                        </li>
-
-                        <li>
-                            <a href="manage-activos.php">
-                                <i class="fa fa-bars"></i>
-                                <span>Ver Activos</span>
-                            </a>
-                        </li>
+                        <li><a href="create-activo.php"><i class="fa fa-plus"></i><span>Registrar Activo</span></a></li>
+                        <li><a href="manage-activos.php"><i class="fa fa-bars"></i><span>Ver Activos</span></a></li>
                     </ul>
                 </li>
+                <?php else: ?>
+                <li><a href="manage-activos.php"><i class="fa fa-laptop"></i><span>Consultar Inventario</span></a></li>
+                <?php endif; ?>
 
-                <!-- Gestión de traslados físicos -->
                 <li class="has-children">
-                    <a href="#">
-                        <i class="fa fa-exchange"></i>
-                        <span>Gestión de Traslados</span>
-                        <i class="fa fa-angle-right arrow"></i>
-                    </a>
+                    <a href="#"><i class="fa fa-exchange"></i><span>Gestión de Traslados</span><i class="fa fa-angle-right arrow"></i></a>
                     <ul class="child-nav">
+                        <?php if ($rolActual === 1): ?>
                         <li><a href="registrar-traslado.php"><i class="fa fa-plus"></i><span>Registrar Traslado</span></a></li>
+                        <li><a href="manage-solicitudes-traslado.php"><i class="fa fa-bell"></i><span>Solicitudes pendientes</span></a></li>
+                        <?php elseif ($rolActual === 2): ?>
+                        <li><a href="solicitar-traslado.php"><i class="fa fa-paper-plane"></i><span>Solicitar Traslado</span></a></li>
+                        <?php endif; ?>
                         <li><a href="manage-traslados.php"><i class="fa fa-history"></i><span>Historial de Traslados</span></a></li>
                     </ul>
                 </li>
 
-                <!-- Gestión de asignaciones -->
                 <li class="has-children">
-                    <a href="#">
-                        <i class="fa fa-users"></i>
-                        <span>Gestión Asignaciones</span>
-                        <i class="fa fa-angle-right arrow"></i>
-                    </a>
-
+                    <a href="#"><i class="fa fa-users"></i><span>Gestión Asignaciones</span><i class="fa fa-angle-right arrow"></i></a>
                     <ul class="child-nav">
-                        <li>
-                            <a href="add-asignacion.php">
-                                <i class="fa fa-plus"></i>
-                                <span>Agregar Asignación</span>
-                            </a>
-                        </li>
+                        <?php if (in_array($rolActual, [1,2], true)): ?><li><a href="add-asignacion.php"><i class="fa fa-plus"></i><span>Agregar Asignación</span></a></li><?php endif; ?>
+                        <li><a href="manage-asignacion.php"><i class="fa fa-bars"></i><span>Ver Asignaciones</span></a></li>
+                    </ul>
+                </li>
 
-                        <li>
-                            <a href="manage-asignacion.php">
-                                <i class="fa fa-bars"></i>
-                                <span>Ver Asignaciones</span>
-                            </a>
-                        </li>
+                <li class="has-children">
+                    <a href="#"><i class="fa fa-wrench"></i><span>Mantenimientos</span><i class="fa fa-angle-right arrow"></i></a>
+                    <ul class="child-nav">
+                        <?php if (in_array($rolActual, [1,2], true)): ?><li><a href="add-mantenimiento.php"><i class="fa fa-plus"></i><span>Registrar mantenimiento / reparación</span></a></li><li><a href="programar-masivo.php"><i class="fa fa-calendar"></i><span>Programar jornadas</span></a></li><?php endif; ?>
+                        <li><a href="manage-mantenimientos.php"><i class="fa fa-list"></i><span>Consultar mantenimientos</span></a></li>
                     </ul>
                 </li>
 
