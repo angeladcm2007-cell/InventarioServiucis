@@ -12,7 +12,7 @@
                  width="40px">
 
             <p style="color: white;">
-                Automatización Informatica y Telecomunicaciones
+                Sistemas de Inventario <br> Serviucis
             </p>
             <br>
         </div>
@@ -21,7 +21,7 @@
             <ul class="side-nav color-gray">
 
                 <li class="nav-header">
-                    <span>SISAT</span>
+                    <span>SERVIUCIS</span>
                 </li>
 
                 <li>
