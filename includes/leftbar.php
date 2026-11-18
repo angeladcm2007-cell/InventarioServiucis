@@ -1,8 +1,37 @@
-<?php require_once __DIR__ . '/auth.php'; sisatRequireLogin(); $rolActual = sisatRoleId(); ?>
+<?php
+require_once __DIR__ . '/auth.php';
+sisatRequireLogin();
+$rolActual = sisatRoleId();
+$solicitudesTrasladoPendientes = 0;
+if ($rolActual === 1) {
+    try {
+        if (!isset($dbh) || !($dbh instanceof PDO)) {
+            require_once __DIR__ . '/config.php';
+        }
+        $solicitudesTrasladoPendientes = (int)$dbh->query("SELECT COUNT(*) FROM solicitudes_traslado WHERE estado='PENDIENTE'")->fetchColumn();
+    } catch (Throwable $e) {
+        // El menú no debe dejar de mostrarse si la tabla aún no está disponible.
+        error_log('No fue posible consultar solicitudes de traslado pendientes: ' . $e->getMessage());
+    }
+}
+?>
 <div class="left-sidebar box-shadow" style="
     background-color: #0c4d58ff;
     padding-top: 30px;
 ">
+    <style>
+        .solicitudes-pendientes-link { position: relative; }
+        /* Indicador pequeño superpuesto a la campana, sin ocupar otra línea. */
+        .solicitudes-pendientes-badge {
+            position: absolute; top: 3px; left: 23px;
+            display: inline-flex; align-items: center; justify-content: center;
+            min-width: 15px; width: auto; height: 15px; padding: 0 3px;
+            border-radius: 10px; background: #e32636; color: #fff;
+            font-size: 9px; line-height: 15px; font-weight: 700;
+            vertical-align: top; box-shadow: 0 0 0 1px #0c4d58;
+            z-index: 2; pointer-events: none;
+        }
+    </style>
     <div class="sidebar-content">
 
         <div class="user-info">
@@ -62,7 +91,14 @@
                     <ul class="child-nav">
                         <?php if ($rolActual === 1): ?>
                         <li><a href="registrar-traslado.php"><i class="fa fa-plus"></i><span>Registrar Traslado</span></a></li>
-                        <li><a href="manage-solicitudes-traslado.php"><i class="fa fa-bell"></i><span>Solicitudes pendientes</span></a></li>
+                        <li>
+                            <a href="manage-solicitudes-traslado.php" class="solicitudes-pendientes-link">
+                                <i class="fa fa-bell"></i><span>Solicitudes pendientes</span>
+                                <?php if ($solicitudesTrasladoPendientes > 0): ?>
+                                    <span class="solicitudes-pendientes-badge" title="<?php echo $solicitudesTrasladoPendientes; ?> solicitud(es) pendiente(s)"><?php echo $solicitudesTrasladoPendientes > 9 ? '9+' : $solicitudesTrasladoPendientes; ?></span>
+                                <?php endif; ?>
+                            </a>
+                        </li>
                         <?php elseif ($rolActual === 2): ?>
                         <li><a href="solicitar-traslado.php"><i class="fa fa-paper-plane"></i><span>Solicitar Traslado</span></a></li>
                         <?php endif; ?>

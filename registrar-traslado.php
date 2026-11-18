@@ -5,6 +5,10 @@ if (session_status() !== PHP_SESSION_ACTIVE) { session_start(); }
 require_once __DIR__ . '/includes/config.php';
 if (empty($_SESSION['alogin']) || empty($_SESSION['uid'])) { header('Location: index.php'); exit; }
 function h($v) { return htmlspecialchars((string)($v ?? ''), ENT_QUOTES, 'UTF-8'); }
+function normalizarNombreSedeTraslado($nombre) {
+    $nombre = mb_strtolower(trim((string)$nombre), 'UTF-8');
+    return strtr($nombre, array('á'=>'a', 'é'=>'e', 'í'=>'i', 'ó'=>'o', 'ú'=>'u', 'ü'=>'u'));
+}
 
 // Búsqueda AJAX de activos por código, placa, descripción, marca, modelo o serial.
 if (isset($_GET['buscar'])) {
@@ -60,12 +64,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $origenId = (int)$activo['ubicacion_id'];
         $sedeOrigenId = (int)$activo['sede_id'];
         if ($sedeOrigenId < 1) throw new RuntimeException('El activo no tiene una sede de origen válida.');
+        if (!in_array(normalizarNombreSedeTraslado($activo['sede'] ?? ''), array('rionegro', 'apartado'), true)) {
+            throw new RuntimeException('La sede de origen del activo no corresponde a Rionegro ni Apartadó. Verifica primero su ubicación en el inventario.');
+        }
         if ($sedeDestinoId === $sedeOrigenId) throw new RuntimeException('La sede de destino debe ser diferente de la sede donde se encuentra actualmente el activo.');
 
         $q = $dbh->prepare("SELECT id,nombre FROM sedes WHERE id=:id AND estado='ACTIVA' LIMIT 1 FOR UPDATE");
         $q->execute(array(':id'=>$sedeDestinoId));
         $sedeDestino = $q->fetch(PDO::FETCH_ASSOC);
-        if (!$sedeDestino) throw new RuntimeException('La sede de destino no existe o está inactiva.');
+        if (!$sedeDestino || !in_array(normalizarNombreSedeTraslado($sedeDestino['nombre']), array('rionegro', 'apartado'), true)) {
+            throw new RuntimeException('Selecciona como destino Rionegro o Apartadó.');
+        }
 
         // Reutiliza una ubicación activa idéntica; si no existe, la crea dentro de la misma transacción.
         $q = $dbh->prepare("SELECT id FROM ubicaciones WHERE sede_id=:sede AND piso=:piso AND nombre=:oficina AND area_departamento=:departamento AND estado='ACTIVA' LIMIT 1 FOR UPDATE");
@@ -109,8 +118,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$sedesActivas = $dbh->query("SELECT id,nombre FROM sedes WHERE estado='ACTIVA' ORDER BY nombre")->fetchAll(PDO::FETCH_ASSOC);
+$sedesBD = $dbh->query("SELECT id,nombre FROM sedes WHERE estado='ACTIVA' ORDER BY nombre")->fetchAll(PDO::FETCH_ASSOC);
+$sedesActivas = array();
+foreach ($sedesBD as $sedeFila) {
+    $sedeNormalizada = normalizarNombreSedeTraslado($sedeFila['nombre']);
+    if (!in_array($sedeNormalizada, array('rionegro', 'apartado'), true)) continue;
+    $sedeFila['nombre_mostrar'] = $sedeNormalizada === 'apartado' ? 'Apartadó' : 'Rionegro';
+    $sedesActivas[] = $sedeFila;
+}
 if ($valores['activo_id'] !== '') { $q=$dbh->prepare("SELECT a.id,a.codigo_inventario,a.descripcion,a.estado,a.ubicacion_id,u.nombre AS ubicacion,u.sede_id,s.nombre AS sede FROM activos a LEFT JOIN ubicaciones u ON u.id=a.ubicacion_id LEFT JOIN sedes s ON s.id=u.sede_id WHERE a.id=?"); $q->execute(array((int)$valores['activo_id'])); $activoSeleccionado=$q->fetch(PDO::FETCH_ASSOC); }
+$sedeOrigenMostrar = '';
+if ($activoSeleccionado && !empty($activoSeleccionado['sede'])) {
+    $nombreOrigenNormalizado = normalizarNombreSedeTraslado($activoSeleccionado['sede']);
+    if ($nombreOrigenNormalizado === 'rionegro') $sedeOrigenMostrar = 'Rionegro';
+    elseif ($nombreOrigenNormalizado === 'apartado') $sedeOrigenMostrar = 'Apartadó';
+}
 include __DIR__ . '/includes/topbar.php';
 ?>
 <div class="content-wrapper"><div class="content-container"><?php include __DIR__ . '/includes/leftbar.php'; ?><div class="main-page"><div class="container-fluid">
@@ -125,8 +147,8 @@ include __DIR__ . '/includes/topbar.php';
 <div id="resumenActivo" class="alert alert-info" style="<?php echo $activoSeleccionado ? 'display:block' : 'display:none'; ?>"><strong>Activo seleccionado:</strong> <span id="datoActivo"><?php echo h($activoSeleccionado ? $activoSeleccionado['codigo_inventario'].' — '.$activoSeleccionado['descripcion'] : ''); ?></span><br><strong>Ubicación de origen:</strong> <span id="origenActivo"><?php echo h($activoSeleccionado ? (($activoSeleccionado['sede']??'Sin sede').' — '.($activoSeleccionado['ubicacion']??'Sin ubicación')) : ''); ?></span></div>
 <?php if ($requiereConfirmacionSede): ?><div class="alert alert-warning"><strong>Asignación activa a sede.</strong> Antes de continuar, verifica las áreas usuarias registradas: <?php if ($areasAsignadasSede): ?><ul><?php foreach($areasAsignadasSede as $area): ?><li><?php echo h($area['ubicacion_espacio'].($area['area_departamento']?' — '.$area['area_departamento']:'')); ?></li><?php endforeach; ?></ul><?php else: ?>No hay áreas usuarias detalladas en el registro.<?php endif; ?><label style="font-weight:normal"><input type="checkbox" name="confirmar_asignacion_sede" value="1" required> Confirmo que revisé las áreas usuarias y autorizo el traslado.</label></div><?php endif; ?>
 <div class="row">
-<div class="form-group col-md-6"><label for="sede_origen">Sede de origen</label><input type="text" id="sede_origen" class="form-control" value="<?php echo h($activoSeleccionado['sede'] ?? 'Se determina al seleccionar el activo'); ?>" readonly></div>
-<div class="form-group col-md-6"><label for="sede_destino_id">Sede de destino *</label><select name="sede_destino_id" id="sede_destino_id" class="form-control" required <?php echo $activoSeleccionado ? '' : 'disabled'; ?>><option value="">Primero seleccione un activo</option><?php foreach ($sedesActivas as $s): ?><option value="<?php echo (int)$s['id']; ?>" <?php echo ((string)$valores['sede_destino_id']===(string)$s['id'])?'selected':''; ?>><?php echo h($s['nombre']); ?></option><?php endforeach; ?></select><small class="text-muted">Se propone automáticamente la otra sede.</small></div>
+<div class="form-group col-md-6"><label for="sede_origen_nombre">Sede de origen *</label><input type="text" id="sede_origen_nombre" class="form-control" value="<?php echo h($sedeOrigenMostrar); ?>" placeholder="Se completa al seleccionar un activo" readonly><small class="text-muted">Se completa automáticamente según la sede donde está ubicado el activo seleccionado.</small></div>
+<div class="form-group col-md-6"><label for="sede_destino_nombre">Sede de destino *</label><input type="text" id="sede_destino_nombre" class="form-control" value="" placeholder="Se completa automáticamente" readonly><input type="hidden" name="sede_destino_id" id="sede_destino_id" value="<?php echo h($valores['sede_destino_id']); ?>"><small class="text-muted">Se asigna automáticamente la sede contraria a la sede de origen.</small></div>
 </div>
 <div class="row">
 <div class="form-group col-md-4"><label for="piso_destino">Piso *</label><input type="text" name="piso_destino" id="piso_destino" maxlength="30" class="form-control" value="<?php echo h($valores['piso_destino']); ?>" placeholder="Ej. 1" required></div>
@@ -142,14 +164,186 @@ include __DIR__ . '/includes/topbar.php';
 </div></div></div></div></div></section></div></div></div>
 <script>
 (function(){
- const input=document.getElementById('buscarActivo'), results=document.getElementById('resultadosActivos'), hidden=document.getElementById('activo_id'), summary=document.getElementById('resumenActivo');
- let timer=null, seleccionado=null; const sedeSelect=document.getElementById('sede_destino_id'); const sedeOrigen=document.getElementById('sede_origen'); const sedes=Array.from(sedeSelect.options).filter(o=>o.value).map(o=>({id:o.value,nombre:o.text}));
- function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
- input.addEventListener('input',function(){hidden.value='';seleccionado=null;summary.style.display='none';document.getElementById('estadoActivo').value='';clearTimeout(timer);const term=input.value.trim();if(term.length<2){results.style.display='none';return;}timer=setTimeout(()=>fetch('registrar-traslado.php?buscar='+encodeURIComponent(term)).then(r=>r.json()).then(items=>{results.innerHTML='';if(!items.length){results.innerHTML='<div class="list-group-item">No se encontraron activos.</div>';results.style.display='block';return;}items.forEach(a=>{const b=document.createElement('button');b.type='button';b.className='list-group-item';b.innerHTML='<strong>'+esc(a.codigo_inventario)+'</strong> — '+esc(a.descripcion||'Sin descripción')+'<br><small>'+esc([a.marca,a.modelo,a.numero_serial?'Serial: '+a.numero_serial:'',a.codigo_placa?'Placa: '+a.codigo_placa:''].filter(Boolean).join(' | '))+' | '+esc(a.sede||'Sin sede')+' / '+esc(a.ubicacion||'Sin ubicación')+' | '+esc(a.estado)+'</small>';
- if(a.estado==='DADO_DE_BAJA_OBSOLETO'){b.disabled=true;b.title='Activo dado de baja u obsoleto';}
- b.addEventListener('click',()=>{seleccionado=a;hidden.value=a.id; sedeOrigen.value=a.sede||'Sin sede'; sedeSelect.disabled=false; const otraSede=sedes.find(s=>s.id!==String(a.sede_id)); sedeSelect.value=otraSede?otraSede.id:''; if(!otraSede){sedeSelect.value='';sedeSelect.disabled=true;} input.value=a.codigo_inventario+' — '+(a.descripcion||'');document.getElementById('estadoActivo').value=a.estado;document.getElementById('datoActivo').textContent=a.codigo_inventario+' — '+(a.descripcion||'');document.getElementById('origenActivo').textContent=(a.sede||'Sin sede')+' — '+(a.ubicacion||'Sin ubicación');summary.style.display='block';results.style.display='none';});results.appendChild(b);});results.style.display='block';}).catch(()=>{results.innerHTML='<div class="list-group-item text-danger">No fue posible consultar los activos.</div>';results.style.display='block';}),250);});
- document.addEventListener('click',e=>{if(!results.contains(e.target)&&e.target!==input)results.style.display='none';});
- document.getElementById('formTraslado').addEventListener('submit',function(e){if(!hidden.value){e.preventDefault();alert('Debes seleccionar un activo de los resultados de búsqueda.');return;}if(seleccionado&&seleccionado.estado==='DADO_DE_BAJA_OBSOLETO'){e.preventDefault();alert('No se permite trasladar un activo dado de baja u obsoleto.');return;}if(!sedeSelect.value){e.preventDefault();alert('No hay una sede de destino activa disponible distinta de la sede de origen.');return;}if(seleccionado&&String(seleccionado.sede_id)===sedeSelect.value){e.preventDefault();alert('La sede de destino debe ser diferente de la sede de origen.');return;} });
+    const input = document.getElementById('buscarActivo');
+    const results = document.getElementById('resultadosActivos');
+    const hidden = document.getElementById('activo_id');
+    const summary = document.getElementById('resumenActivo');
+    const estadoActivo = document.getElementById('estadoActivo');
+    const sedeOrigen = document.getElementById('sede_origen_nombre');
+    const sedeSelect = document.getElementById('sede_destino_id');
+    const sedeDestinoNombre = document.getElementById('sede_destino_nombre');
+    const form = document.getElementById('formTraslado');
+
+    const opcionesSedes = <?php echo json_encode(array_map(function($s) { return array('id'=>(string)$s['id'], 'nombre'=>$s['nombre_mostrar']); }, $sedesActivas), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
+
+    let timer = null;
+    let seleccionado = null;
+
+    function esc(valor) {
+        return String(valor ?? '').replace(/[&<>"']/g, caracter => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[caracter]));
+    }
+
+    function nombreSede(id) {
+        const sede = opcionesSedes.find(item => item.id === String(id || ''));
+        return sede ? sede.nombre : '';
+    }
+
+    function actualizarSedes(origenId, destinoPreferido) {
+        const origen = String(origenId || '');
+        const destinosDisponibles = opcionesSedes.filter(sede => sede.id !== origen);
+
+        // Solo existen como destinos permitidos Rionegro y Apartadó: se toma la contraria.
+        if (origen && destinosDisponibles.length === 1) {
+            sedeSelect.value = destinosDisponibles[0].id;
+            sedeDestinoNombre.value = destinosDisponibles[0].nombre;
+        } else {
+            sedeSelect.value = '';
+            sedeDestinoNombre.value = '';
+        }
+    }
+
+    function limpiarActivo() {
+        hidden.value = '';
+        seleccionado = null;
+        summary.style.display = 'none';
+        estadoActivo.value = '';
+        sedeOrigen.value = '';
+        actualizarSedes('', '');
+    }
+
+    input.addEventListener('input', function(){
+        limpiarActivo();
+        clearTimeout(timer);
+
+        const termino = input.value.trim();
+        if (termino.length < 2) {
+            results.style.display = 'none';
+            results.innerHTML = '';
+            return;
+        }
+
+        timer = setTimeout(function(){
+            fetch('registrar-traslado.php?buscar=' + encodeURIComponent(termino))
+                .then(response => {
+                    if (!response.ok) throw new Error('Error en la consulta');
+                    return response.json();
+                })
+                .then(items => {
+                    results.innerHTML = '';
+
+                    if (!items.length) {
+                        results.innerHTML = '<div class="list-group-item">No se encontraron activos.</div>';
+                        results.style.display = 'block';
+                        return;
+                    }
+
+                    items.forEach(activo => {
+                        const boton = document.createElement('button');
+                        boton.type = 'button';
+                        boton.className = 'list-group-item';
+                        boton.innerHTML = '<strong>' + esc(activo.codigo_inventario) + '</strong> — ' +
+                            esc(activo.descripcion || 'Sin descripción') + '<br><small>' +
+                            esc([
+                                activo.marca,
+                                activo.modelo,
+                                activo.numero_serial ? 'Serial: ' + activo.numero_serial : '',
+                                activo.codigo_placa ? 'Placa: ' + activo.codigo_placa : ''
+                            ].filter(Boolean).join(' | ')) +
+                            ' | ' + esc(activo.sede || 'Sin sede') +
+                            ' / ' + esc(activo.ubicacion || 'Sin ubicación') +
+                            ' | ' + esc(activo.estado) + '</small>';
+
+                        if (activo.estado === 'DADO_DE_BAJA_OBSOLETO') {
+                            boton.disabled = true;
+                            boton.title = 'Activo dado de baja u obsoleto';
+                        }
+
+                        boton.addEventListener('click', function(){
+                            seleccionado = activo;
+                            hidden.value = activo.id;
+
+                            // El origen se muestra automáticamente desde la sede real del activo.
+                            const origenId = String(activo.sede_id || '');
+                            sedeOrigen.value = nombreSede(origenId);
+
+                            // El destino queda automáticamente en la única sede contraria.
+                            actualizarSedes(origenId, '');
+
+                            input.value = activo.codigo_inventario + ' — ' + (activo.descripcion || '');
+                            estadoActivo.value = activo.estado;
+                            document.getElementById('datoActivo').textContent =
+                                activo.codigo_inventario + ' — ' + (activo.descripcion || '');
+                            document.getElementById('origenActivo').textContent =
+                                (activo.sede || 'Sin sede') + ' — ' + (activo.ubicacion || 'Sin ubicación');
+
+                            summary.style.display = 'block';
+                            results.style.display = 'none';
+                        });
+
+                        results.appendChild(boton);
+                    });
+
+                    results.style.display = 'block';
+                })
+                .catch(function(){
+                    results.innerHTML = '<div class="list-group-item text-danger">No fue posible consultar los activos.</div>';
+                    results.style.display = 'block';
+                });
+        }, 250);
+    });
+
+    document.addEventListener('click', function(event){
+        if (!results.contains(event.target) && event.target !== input) {
+            results.style.display = 'none';
+        }
+    });
+
+    form.addEventListener('submit', function(event){
+        if (!hidden.value) {
+            event.preventDefault();
+            alert('Debes seleccionar un activo de los resultados de búsqueda.');
+            return;
+        }
+
+        if (seleccionado && seleccionado.estado === 'DADO_DE_BAJA_OBSOLETO') {
+            event.preventDefault();
+            alert('No se permite trasladar un activo dado de baja u obsoleto.');
+            return;
+        }
+
+        if (!sedeOrigen.value) {
+            event.preventDefault();
+            alert('El activo seleccionado no tiene una sede de origen válida.');
+            return;
+        }
+
+        if (!sedeSelect.value) {
+            event.preventDefault();
+            alert('No hay una sede de destino contraria disponible. Verifica las sedes activas.');
+            return;
+        }
+
+        const origenId = seleccionado ? String(seleccionado.sede_id || '') : '';
+        if (origenId && origenId === sedeSelect.value) {
+            event.preventDefault();
+            alert('La sede de destino debe ser la sede contraria a la sede de origen.');
+        }
+    });
+
+    // Si se vuelve a mostrar el formulario después de una validación, reconstruye las sedes.
+    const activoInicialId = <?php echo $activoSeleccionado ? (int)$activoSeleccionado['sede_id'] : 0; ?>;
+    const destinoInicialId = <?php echo (int)$valores['sede_destino_id']; ?>;
+    if (activoInicialId > 0) {
+        actualizarSedes(String(activoInicialId), String(destinoInicialId || ''));
+    } else {
+        actualizarSedes('', '');
+    }
 })();
 </script>
 <?php include __DIR__ . '/includes/footer.php'; ?>

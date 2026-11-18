@@ -75,36 +75,73 @@
 
             // Solo activa exportación en las tablas marcadas
             var permiteExportar = $('#example').attr('data-exportar') === '1';
+            // Esta marca limita el diseño especial a Gestión de Activos.
+            var esInventarioActivos = $('#example').attr('data-export-layout') === 'inventario-activos';
 
             var botonesExportacion = [];
 
             if (permiteExportar) {
+                // Un único botón: genera y descarga el inventario en PDF.
                 botonesExportacion = [{
-                        extend: 'print',
-                        text: '<i class="fa fa-print"></i> Imprimir',
-                        title: 'Inventario de activos',
-                        exportOptions: {
-                            columns: ':visible'
-                        }
+                    extend: 'pdfHtml5',
+                    text: '<i class="fa fa-file-pdf-o"></i> Exportar',
+                    title: 'Inventario de activos',
+                    filename: 'Inventario_de_activos',
+                    className: 'btn btn-primary',
+                    orientation: 'landscape',
+                    pageSize: 'A3',
+                    exportOptions: {
+                        columns: ':visible'
                     },
-                    {
-                        extend: 'pdfHtml5',
-                        text: '<i class="fa fa-file-pdf-o"></i> Guardar PDF',
-                        title: 'Inventario de activos',
-                        filename: 'Inventario_de_activos',
-                        orientation: 'landscape',
-                        pageSize: 'A3',
-                        exportOptions: {
-                            columns: ':visible'
-                        },
-                        customize: function(doc) {
-                            doc.defaultStyle.fontSize = 7;
-                            doc.styles.tableHeader.fontSize = 8;
-                            doc.styles.title.fontSize = 14;
-                            doc.pageMargins = [15, 20, 15, 20];
+                    customize: function(doc) {
+                        // Mantiene el formato amplio en A3 horizontal sin recortar columnas.
+                        doc.pageMargins = esInventarioActivos ? [16, 24, 16, 24] : [18, 26, 18, 26];
+                        doc.defaultStyle = doc.defaultStyle || {};
+                        doc.defaultStyle.font = 'Roboto';
+                        doc.defaultStyle.fontSize = esInventarioActivos ? 8 : 7;
+                        doc.defaultStyle.color = '#263445';
+
+                        doc.styles.title = doc.styles.title || {};
+                        doc.styles.title.fontSize = 16;
+                        doc.styles.title.bold = true;
+                        doc.styles.title.color = '#234e70';
+                        doc.styles.title.alignment = 'left';
+                        doc.styles.title.margin = [0, 0, 0, 12];
+
+                        doc.styles.tableHeader = doc.styles.tableHeader || {};
+                        doc.styles.tableHeader.fontSize = esInventarioActivos ? 8.5 : 8;
+                        doc.styles.tableHeader.bold = true;
+                        doc.styles.tableHeader.color = '#ffffff';
+                        doc.styles.tableHeader.fillColor = '#234e70';
+                        doc.styles.tableHeader.alignment = 'center';
+                        doc.styles.tableHeader.margin = [4, 7, 4, 7];
+
+                        if (esInventarioActivos && doc.content) {
+                            doc.content.forEach(function(elemento) {
+                                if (!elemento.table) return;
+
+                                elemento.layout = {
+                                    hLineWidth: function() { return 0.7; },
+                                    vLineWidth: function() { return 0.7; },
+                                    hLineColor: function() { return '#b8c7d3'; },
+                                    vLineColor: function() { return '#b8c7d3'; },
+                                    paddingLeft: function() { return 5; },
+                                    paddingRight: function() { return 5; },
+                                    paddingTop: function() { return 5; },
+                                    paddingBottom: function() { return 5; },
+                                    fillColor: function(fila) {
+                                        if (fila === 0) return '#234e70';
+                                        // Filas alternadas en blanco y azul bebé.
+                                        return fila % 2 === 0 ? '#E6F2FA' : '#FFFFFF';
+                                    }
+                                };
+
+                                // Distribuye el ancho disponible entre todas las columnas.
+                                elemento.table.widths = Array(elemento.table.body[0].length).fill('*');
+                            });
                         }
                     }
-                ];
+                }];
             }
 
             var tabla = $('#example').DataTable({

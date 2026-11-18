@@ -172,6 +172,7 @@ $tipos = array(
                                         <div class="table-responsive">
                                             <table id="example"
                                                 data-exportar="1"
+                                                data-export-layout="inventario-activos"
                                                 class="display table table-striped table-bordered"
                                                 cellspacing="0"
                                                 width="100%">
